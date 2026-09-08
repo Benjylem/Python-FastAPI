@@ -13,7 +13,9 @@ router = APIRouter(prefix="/rooms", tags=["rooms"])
 
 salles = {
     1: {"name": "Pare-Feu", "bio": "Obtenez la Clé de Validation Externe"},
-    2: {"name": "Proxy", "bio": "Décrochez les Privilèges Intermédiaires"}
+    2: {"name": "Proxy", "bio": "Décrochez les Privilèges Intermédiaires"},
+    3: {"name": "Matrice des Contre-Mesures", "bio": "Désamorcer le piège et récupérez le Module de Déchiffrement du Cœur"},
+    4: {"name": "Noyau Central", "bio": "Identifiez la ligne critique défectueuse, injectez le patch et valider la commande de reboot du système"}
 }
 
 @router.get("/")
