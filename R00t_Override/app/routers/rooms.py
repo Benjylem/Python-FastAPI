@@ -1,8 +1,7 @@
-from fastapi import FastAPI
-
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-router = FastAPI()
+router = APIRouter()
 
 class Salle(BaseModel):
     name: str
@@ -23,6 +22,11 @@ salles = {
     4: {"name": "Noyau Central", "bio": "Identifiez la ligne critique défectueuse, injectez le patch et valider la commande de reboot du système"}
 }
 
+players = {
+    1: {"name": "Joe", "reward1": False, "reward2": False, "reward3": False, "reward4": False },
+    2: {"name": "Jasmine", "reward1": False, "reward2": False, "reward3": False, "reward4": False },
+}
+
 @router.get("/rooms")
 def get_rooms():
     return list(salles.keys())
@@ -30,3 +34,18 @@ def get_rooms():
 @router.get("/rooms/{salle_id}")
 def get_room(salle_id):
     return salle_id, salles.get(int(salle_id))
+
+@router.get("/players")
+def get_players():
+    return players
+
+@router.get("/players/{player_id}")
+def get_player(player_id: int):
+    return players.get(player_id)
+
+@router.post("/players")
+def create_player(player: Player):
+    new_id = max(p["id"] for p in players) + 1
+    new_player = {"id": new_id, **player.model_dump()}
+    players.append(new_player)
+    return new_player
