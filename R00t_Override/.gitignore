@@ -5,3 +5,4 @@ __pycache__/
 *.db
 *.log
 .gm_session
+CLAUDE.md
