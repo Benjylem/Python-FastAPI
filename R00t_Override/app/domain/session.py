@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 
 from app.data import players as players_data
@@ -7,13 +7,14 @@ from app.domain.players import Player
 from app.domain.Room import Salle
 
 DERNIERE_SALLE = max(salles)
+DUREE_PARTIE = timedelta(minutes=60)
 
 
 class StatutPartie(StrEnum):
     LOBBY = "lobby"  # l'équipe se constitue, le chrono n'a pas démarré
     IN_PROGRESS = "in_progress"
     VICTORY = "victory"
-    GAME_OVER = "game_over"  # timer écoulé (pas encore implémenté)
+    GAME_OVER = "game_over"  # timer écoulé
 
 
 class Inventaire:
@@ -38,6 +39,7 @@ class Session:
         self.current_room = 1
         self.status = StatutPartie.LOBBY
         self.started_at: datetime | None = None
+        self.ended_at: datetime | None = None  # fige le chrono à la fin de la partie
         self.inventaire = Inventaire([s.reward for s in salles.values() if s.reward])
 
     @property
@@ -49,6 +51,22 @@ class Session:
     @property
     def terminee(self) -> bool:
         return self.status in (StatutPartie.VICTORY, StatutPartie.GAME_OVER)
+
+    @property
+    def temps_restant(self) -> int | None:
+        """Secondes restantes avant le game over ; None tant que la partie est en lobby."""
+        if self.started_at is None:
+            return None
+        fin = self.ended_at or datetime.now()
+        restant = DUREE_PARTIE - (fin - self.started_at)
+        return max(0, int(restant.total_seconds()))
+
+    def verifier_timer(self) -> None:
+        """Passe la partie en game over si le chrono est écoulé. Appelé à chaque
+        accès à la session : pas besoin de tâche de fond qui tourne en parallèle."""
+        if self.status == StatutPartie.IN_PROGRESS and self.temps_restant == 0:
+            self.status = StatutPartie.GAME_OVER
+            self.ended_at = self.started_at + DUREE_PARTIE
 
     def ajouter_joueur(self, player: Player) -> None:
         player.session_id = self.id
@@ -70,6 +88,7 @@ class Session:
                 self.inventaire.ajouter(salle.reward)
             if salle.id == DERNIERE_SALLE:
                 self.status = StatutPartie.VICTORY
+                self.ended_at = datetime.now()
             else:
                 self.current_room = salle.id + 1
         return success

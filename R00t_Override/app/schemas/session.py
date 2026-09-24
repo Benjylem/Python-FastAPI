@@ -34,6 +34,7 @@ class SessionState(BaseModel):
     current_room: int
     status: StatutPartie
     started_at: datetime | None  # None tant que la partie est en lobby
+    temps_restant: int | None  # secondes avant le game over, None en lobby
     players: list[PlayerRead]
     inventaire: dict[str, bool]
 

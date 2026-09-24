@@ -289,3 +289,80 @@ def test_all_enigmas_resolved_after_victory(client, session_id):
         submit(client, session_id, salle_id, BONNES_REPONSES[salle_id])
 
     assert all(enigma(client, session_id, n).json()["resolue"] for n in (1, 2, 3, 4))
+
+
+# --- Timer (60 min) ---
+# Pour ne pas attendre 60 minutes, on recule toute la chronologie de la session
+# (started_at et ended_at) : ça revient au même que laisser le temps passer.
+
+
+def avancer_le_temps(session_id, **duree):
+    from datetime import timedelta
+
+    from app.data.sessions import sessions
+
+    session = sessions[session_id]
+    session.started_at -= timedelta(**duree)
+    if session.ended_at is not None:
+        session.ended_at -= timedelta(**duree)
+
+
+def state(client, session_id):
+    return client.get(f"/sessions/{session_id}/state").json()
+
+
+def test_timer_is_none_while_in_lobby(client, lobby_id):
+    assert state(client, lobby_id)["temps_restant"] is None
+
+
+def test_timer_starts_at_60_minutes_on_launch(client, session_id):
+    assert 3595 <= state(client, session_id)["temps_restant"] <= 3600
+
+
+def test_timer_counts_down(client, session_id):
+    avancer_le_temps(session_id, minutes=10)
+
+    assert 2995 <= state(client, session_id)["temps_restant"] <= 3000
+
+
+def test_timer_expired_sets_game_over(client, session_id):
+    avancer_le_temps(session_id, minutes=61)
+
+    body = state(client, session_id)
+    assert body["status"] == "game_over"
+    assert body["temps_restant"] == 0
+
+
+def test_cannot_submit_after_game_over(client, session_id):
+    avancer_le_temps(session_id, minutes=61)
+
+    response = submit(client, session_id, 1, BONNES_REPONSES[1])
+
+    assert response.status_code == 409
+    assert "Temps écoulé" in response.json()["detail"]
+
+
+def test_cannot_join_team_after_game_over(client, session_id):
+    avancer_le_temps(session_id, minutes=61)
+
+    assert client.post(f"/sessions/{session_id}/players", json={"player_id": 2}).status_code == 409
+
+
+def test_submit_returns_remaining_time(client, session_id):
+    response = submit(client, session_id, 1, BONNES_REPONSES[1])
+
+    assert 3595 <= response.json()["temps_restant"] <= 3600
+
+
+def test_timer_frozen_after_victory(client, session_id):
+    avancer_le_temps(session_id, minutes=20)
+    for salle_id in (1, 2, 3, 4):
+        submit(client, session_id, salle_id, BONNES_REPONSES[salle_id])
+    restant_a_la_victoire = state(client, session_id)["temps_restant"]
+
+    # Même si le chrono continue de tourner, une partie gagnée ne passe jamais en game over.
+    avancer_le_temps(session_id, minutes=60)
+
+    body = state(client, session_id)
+    assert body["status"] == "victory"
+    assert body["temps_restant"] == restant_a_la_victoire

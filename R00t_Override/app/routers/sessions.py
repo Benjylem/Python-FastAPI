@@ -16,6 +16,7 @@ def _get_session(session_id: int) -> Session:
     session = sessions_data.sessions.get(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session introuvable")
+    session.verifier_timer()
     return session
 
 
@@ -47,6 +48,8 @@ def _soumettre(session_id: int, salle_id: int, answer) -> dict:
     session = _get_session(session_id)
     salle = _get_salle(salle_id)
     _verifier_lancee(session)
+    if session.status == StatutPartie.GAME_OVER:
+        raise HTTPException(status_code=409, detail="Temps écoulé : la partie est perdue")
     if session.terminee:
         raise HTTPException(status_code=409, detail="La partie est terminée")
     _verifier_debloquee(session, salle_id)
@@ -60,6 +63,7 @@ def _soumettre(session_id: int, salle_id: int, answer) -> dict:
         "reward": salle.reward if success else None,
         "current_room": session.current_room,
         "game_status": session.status,
+        "temps_restant": session.temps_restant,
     }
 
 
