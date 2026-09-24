@@ -21,7 +21,7 @@ def test_get_unknown_player_returns_404(client):
 
 
 def test_create_player_assigns_incremental_id(client):
-    payload = {"name": "Alice", "reward1": False, "reward2": False, "reward3": False}
+    payload = {"name": "Alice"}
 
     response = client.post("/players/", json=payload)
 
@@ -36,7 +36,7 @@ def test_create_player_assigns_incremental_id(client):
 
 
 def test_create_player_rejects_short_name(client):
-    payload = {"name": "Al", "reward1": False, "reward2": False, "reward3": False}
+    payload = {"name": "Al"}
 
     response = client.post("/players/", json=payload)
 

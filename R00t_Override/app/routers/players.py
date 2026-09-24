@@ -1,38 +1,24 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+
+from app.domain import players as players_domain
+from app.schemas.player import PlayerCreate, PlayerRead
 
 router = APIRouter(prefix="/players", tags=["players"])
 
 
-class Player(BaseModel):
-    name: str = Field(min_length=3)
-    reward1: bool
-    reward2: bool
-    reward3: bool
-
-
-players = [
-    {"id": 1, "name": "Joe", "reward1": False, "reward2": False, "reward3": False},
-    {"id": 2, "name": "Jasmine", "reward1": False, "reward2": False, "reward3": False},
-]
-
-
-@router.get("/")
+@router.get("/", response_model=list[PlayerRead])
 def get_players():
-    return players
+    return list(players_domain.players.values())
 
 
-@router.get("/{player_id}")
+@router.get("/{player_id}", response_model=PlayerRead)
 def get_player(player_id: int):
-    for player in players:
-        if player["id"] == player_id:
-            return player
-    raise HTTPException(status_code=404, detail="Player not found")
+    player = players_domain.players.get(player_id)
+    if player is None:
+        raise HTTPException(status_code=404, detail="Player not found")
+    return player
 
 
-@router.post("/")
-def create_player(player: Player):
-    new_id = max((p["id"] for p in players), default=0) + 1
-    new_player = {"id": new_id, **player.model_dump()}
-    players.append(new_player)
-    return new_player
+@router.post("/", response_model=PlayerRead)
+def create_player(payload: PlayerCreate):
+    return players_domain.create_player(payload.name)
