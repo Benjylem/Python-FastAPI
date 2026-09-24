@@ -7,6 +7,12 @@ class PlayerCreate(BaseModel):
     name: str = Field(min_length=3)
 
 
+class PlayerUpdate(BaseModel):
+    """Payload pour modifier un joueur (PUT) : l'équipe se gère via /sessions."""
+
+    name: str = Field(min_length=3)
+
+
 class PlayerRead(BaseModel):
     """Joueur renvoyé par l'API (lu depuis l'objet domaine Player)."""
 

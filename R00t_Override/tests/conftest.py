@@ -1,8 +1,10 @@
+import copy
+
 import pytest
 from fastapi.testclient import TestClient
 
-from app.domain.players import players
-from app.domain.session import sessions
+from app.data.players import players
+from app.data.sessions import sessions
 from app.main import app
 
 
@@ -13,17 +15,15 @@ def client():
 
 @pytest.fixture(autouse=True)
 def reset_state():
-    """Sessions et joueurs sont stockés dans des dicts globaux : on les remet à
-    l'état initial après chaque test (joueurs de base sans équipe, joueurs
-    créés pendant le test supprimés) pour que les tests restent indépendants."""
-    joueurs_initiaux = set(players)
+    """Joueurs et sessions sont stockés dans des dicts globaux : on restaure les
+    joueurs de départ (après un POST, PUT, DELETE ou un changement d'équipe) et
+    on vide les sessions, pour que les tests restent indépendants."""
+    players_initiaux = copy.deepcopy(players)
     sessions.clear()
     yield
+    players.clear()
+    players.update(players_initiaux)
     sessions.clear()
-    for player_id in set(players) - joueurs_initiaux:
-        del players[player_id]
-    for player in players.values():
-        player.session_id = None
 
 
 @pytest.fixture

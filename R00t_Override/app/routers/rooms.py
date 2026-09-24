@@ -1,11 +1,12 @@
 from fastapi import APIRouter, HTTPException
 
-from app.domain.Room import salles
+from app.data.salles import salles
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
-# Lecture seule : la soumission des réponses se fait via la session de l'équipe
-# (POST /sessions/{id}/rooms/{salle_id}/submit), qui gère progression et inventaire.
+# « Carte » publique du jeu : nom et bio de chaque salle, sans l'énoncé.
+# L'énoncé n'est lisible que via la session, une fois la salle débloquée
+# (GET /sessions/{id}/rooms/{salle_id}/enigma).
 
 
 @router.get("/")
@@ -22,5 +23,4 @@ def get_room(salle_id: int):
         "id": salle.id,
         "name": salle.name,
         "bio": salle.bio,
-        "enigme": salle.enigme.prompt,
     }

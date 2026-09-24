@@ -1,9 +1,10 @@
 from datetime import datetime
 from enum import StrEnum
 
-from app.domain import players as players_domain
+from app.data import players as players_data
+from app.data.salles import salles
 from app.domain.players import Player
-from app.domain.Room import Salle, salles
+from app.domain.Room import Salle
 
 DERNIERE_SALLE = max(salles)
 
@@ -43,7 +44,7 @@ class Session:
     def players(self) -> list[Player]:
         # Le lien est porté par Player.session_id : on filtre au lieu de tenir une
         # seconde liste à synchroniser.
-        return [p for p in players_domain.players.values() if p.session_id == self.id]
+        return [p for p in players_data.players.values() if p.session_id == self.id]
 
     @property
     def terminee(self) -> bool:
@@ -73,13 +74,3 @@ class Session:
                 self.current_room = salle.id + 1
         return success
 
-
-# Sessions en mémoire pour tester ; remplacé plus tard par une vraie table DB.
-sessions: dict[int, Session] = {}
-
-
-def create_session(team_name: str) -> Session:
-    new_id = max(sessions.keys(), default=0) + 1
-    session = Session(new_id, team_name)
-    sessions[new_id] = session
-    return session

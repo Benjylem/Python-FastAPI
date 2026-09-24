@@ -34,6 +34,23 @@ def test_start_session_rejects_empty_team_name(client):
     assert client.post("/sessions/start", json={"team_name": "  "}).status_code == 422
 
 
+def test_start_session_rejects_missing_team_name(client):
+    assert client.post("/sessions/start", json={}).status_code == 422
+
+
+def test_start_session_assigns_incremental_ids(client):
+    first = client.post("/sessions/start", json={"team_name": "Alpha"}).json()
+    second = client.post("/sessions/start", json={"team_name": "Beta"}).json()
+
+    assert second["id"] == first["id"] + 1
+
+
+def test_get_session_state_matches_created_session(client):
+    created = client.post("/sessions/start", json={"team_name": "Root Squad"}).json()
+
+    assert client.get(f"/sessions/{created['id']}/state").json() == created
+
+
 def test_unknown_session_returns_404(client):
     assert client.get("/sessions/999/state").status_code == 404
     assert submit(client, 999, 1, BONNES_REPONSES[1]).status_code == 404
@@ -75,7 +92,10 @@ def test_cannot_skip_to_a_later_room(client, session_id):
 def test_cannot_replay_a_passed_room(client, session_id):
     submit(client, session_id, 1, BONNES_REPONSES[1])
 
-    assert submit(client, session_id, 1, BONNES_REPONSES[1]).status_code == 403
+    response = submit(client, session_id, 1, BONNES_REPONSES[1])
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Salle déjà résolue"
 
 
 def test_empty_answer_is_rejected(client, session_id):
@@ -217,3 +237,55 @@ def test_can_leave_finished_game(client, session_id):
         submit(client, session_id, salle_id, BONNES_REPONSES[salle_id])
 
     assert client.delete(f"/sessions/{session_id}/players/1").status_code == 200
+
+
+# --- Énoncés (GET /sessions/{id}/rooms/{n}/enigma) ---
+
+
+def enigma(client, session_id, salle_id):
+    return client.get(f"/sessions/{session_id}/rooms/{salle_id}/enigma")
+
+
+def test_enigma_of_current_room(client, session_id):
+    response = enigma(client, session_id, 1)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["room"] == 1
+    assert body["name"] == "Pare-Feu"
+    assert "cm9vdF9vdmVycmlkZQ==" in body["enigme"]
+    assert body["resolue"] is False
+    assert "reponse_attendue" not in body
+
+
+def test_enigma_of_room2_contains_logs(client, session_id):
+    submit(client, session_id, 1, BONNES_REPONSES[1])
+
+    assert "ADMIN_TOKEN_X987F" in enigma(client, session_id, 2).json()["enigme"]
+
+
+def test_enigma_of_locked_room_returns_403(client, session_id):
+    assert enigma(client, session_id, 2).status_code == 403
+
+
+def test_enigma_hidden_while_in_lobby(client, lobby_id):
+    assert enigma(client, lobby_id, 1).status_code == 409
+
+
+def test_enigma_unknown_room_or_session_returns_404(client, session_id):
+    assert enigma(client, session_id, 99).status_code == 404
+    assert enigma(client, 999, 1).status_code == 404
+
+
+def test_enigma_marked_resolved_after_success(client, session_id):
+    submit(client, session_id, 1, BONNES_REPONSES[1])
+
+    assert enigma(client, session_id, 1).json()["resolue"] is True
+    assert enigma(client, session_id, 2).json()["resolue"] is False
+
+
+def test_all_enigmas_resolved_after_victory(client, session_id):
+    for salle_id in (1, 2, 3, 4):
+        submit(client, session_id, salle_id, BONNES_REPONSES[salle_id])
+
+    assert all(enigma(client, session_id, n).json()["resolue"] for n in (1, 2, 3, 4))

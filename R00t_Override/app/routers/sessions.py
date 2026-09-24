@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException
 
-from app.domain import players as players_domain
-from app.domain import session as session_domain
+from app.data import players as players_data
+from app.data import sessions as sessions_data
+from app.data.salles import salles
 from app.domain.players import Player
-from app.domain.Room import salles
+from app.domain.Room import Salle
 from app.domain.session import Session, StatutPartie
 from app.schemas.enigme import EnigmeChaineSubmission, EnigmeConditionnelleSubmission
 from app.schemas.session import JoinTeam, SessionCreate, SessionState
@@ -12,33 +13,45 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
 def _get_session(session_id: int) -> Session:
-    session = session_domain.sessions.get(session_id)
+    session = sessions_data.sessions.get(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session introuvable")
     return session
 
 
 def _get_player(player_id: int) -> Player:
-    player = players_domain.players.get(player_id)
+    player = players_data.players.get(player_id)
     if player is None:
         raise HTTPException(status_code=404, detail="Player not found")
     return player
 
 
-def _soumettre(session_id: int, salle_id: int, answer) -> dict:
-    session = _get_session(session_id)
+def _get_salle(salle_id: int) -> Salle:
     salle = salles.get(salle_id)
     if salle is None:
         raise HTTPException(status_code=404, detail="Salle introuvable")
+    return salle
+
+
+def _verifier_lancee(session: Session) -> None:
     if session.status == StatutPartie.LOBBY:
         raise HTTPException(status_code=409, detail="La partie n'a pas encore été lancée")
+
+
+def _verifier_debloquee(session: Session, salle_id: int) -> None:
+    if salle_id > session.current_room:
+        raise HTTPException(status_code=403, detail="Salle verrouillée")
+
+
+def _soumettre(session_id: int, salle_id: int, answer) -> dict:
+    session = _get_session(session_id)
+    salle = _get_salle(salle_id)
+    _verifier_lancee(session)
     if session.terminee:
         raise HTTPException(status_code=409, detail="La partie est terminée")
-    if salle_id != session.current_room:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Accès refusé : la salle courante de l'équipe est la salle {session.current_room}",
-        )
+    _verifier_debloquee(session, salle_id)
+    if salle_id < session.current_room:
+        raise HTTPException(status_code=409, detail="Salle déjà résolue")
 
     success = session.soumettre(salle, answer)
     return {
@@ -53,7 +66,7 @@ def _soumettre(session_id: int, salle_id: int, answer) -> dict:
 @router.post("/start", response_model=SessionState)
 def start_session(payload: SessionCreate):
     """Crée l'équipe, en lobby : les joueurs la rejoignent avant le lancement."""
-    return session_domain.create_session(payload.team_name)
+    return sessions_data.create_session(payload.team_name)
 
 
 @router.get("/{session_id}/state", response_model=SessionState)
@@ -105,6 +118,26 @@ def launch_session(session_id: int):
     return session
 
 
+@router.get("/{session_id}/rooms/{salle_id}/enigma")
+def get_session_enigma(session_id: int, salle_id: int):
+    """Énoncé d'une salle, visible seulement une fois la partie lancée et la salle débloquée."""
+    session = _get_session(session_id)
+    salle = _get_salle(salle_id)
+    _verifier_lancee(session)
+    _verifier_debloquee(session, salle_id)
+
+    return {
+        "session_id": session_id,
+        "room": salle_id,
+        "name": salle.name,
+        "bio": salle.bio,
+        "enigme": salle.enigme.prompt,
+        "resolue": salle_id < session.current_room or session.status == StatutPartie.VICTORY,
+    }
+
+
+# Route dédiée déclarée avant la générique : la salle 3 attend un payload de
+# conditions, pas une chaîne.
 @router.post("/{session_id}/rooms/3/submit")
 def submit_salle3(session_id: int, submission: EnigmeConditionnelleSubmission):
     return _soumettre(session_id, 3, submission.conditions)

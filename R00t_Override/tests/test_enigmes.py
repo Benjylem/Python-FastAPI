@@ -1,6 +1,6 @@
 """Règles de validation des énigmes, testées directement sur les objets domaine."""
 
-from app.domain.Room import salles
+from app.data.salles import salles
 
 SALLE3_OK = {"bypass_firewall": True, "override_lock": "ACTIVE", "port_status": 80}
 
