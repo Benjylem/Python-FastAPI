@@ -36,3 +36,21 @@ def create_player(player: Player):
     new_player = {"id": new_id, **player.model_dump()}
     players.append(new_player)
     return new_player
+
+
+@router.put("/{player_id}")
+def update_player(player_id: int, player: Player):
+    for existing in players:
+        if existing["id"] == player_id:
+            existing.update(player.model_dump())
+            return existing
+    raise HTTPException(status_code=404, detail="Player not found")
+
+
+@router.delete("/{player_id}", status_code=204)
+def delete_player(player_id: int):
+    for index, player in enumerate(players):
+        if player["id"] == player_id:
+            players.pop(index)
+            return
+    raise HTTPException(status_code=404, detail="Player not found")

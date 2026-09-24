@@ -41,3 +41,45 @@ def test_create_player_rejects_short_name(client):
     response = client.post("/players/", json=payload)
 
     assert response.status_code == 422
+
+
+def test_update_player_replaces_fields(client):
+    payload = {"name": "Joseph", "reward1": True, "reward2": False, "reward3": False}
+
+    response = client.put("/players/1", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == 1
+    assert body["name"] == "Joseph"
+    assert body["reward1"] is True
+    assert client.get("/players/1").json()["name"] == "Joseph"
+
+
+def test_update_unknown_player_returns_404(client):
+    payload = {"name": "Ghost", "reward1": False, "reward2": False, "reward3": False}
+
+    response = client.put("/players/999", json=payload)
+
+    assert response.status_code == 404
+
+
+def test_update_player_rejects_short_name(client):
+    payload = {"name": "Jo", "reward1": False, "reward2": False, "reward3": False}
+
+    response = client.put("/players/1", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_delete_player_removes_it(client):
+    response = client.delete("/players/2")
+
+    assert response.status_code == 204
+    assert client.get("/players/2").status_code == 404
+
+
+def test_delete_unknown_player_returns_404(client):
+    response = client.delete("/players/999")
+
+    assert response.status_code == 404

@@ -1,8 +1,12 @@
+import copy
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.domain.game_state import game_state
 from app.main import app
+from app.routers.players import players
+from app.routers.sessions import sessions
 
 
 @pytest.fixture
@@ -19,3 +23,15 @@ def reset_game_state():
     game_state["status"] = "in_progress"
     yield
     game_state["status"] = "in_progress"
+
+
+@pytest.fixture(autouse=True)
+def reset_players_and_sessions():
+    """players et sessions sont aussi des globales en mémoire : on restaure
+    les joueurs de départ et on vide les sessions pour qu'un DELETE ou un
+    POST dans un test ne fausse pas les suivants."""
+    players_initiaux = copy.deepcopy(players)
+    sessions.clear()
+    yield
+    players[:] = players_initiaux
+    sessions.clear()
