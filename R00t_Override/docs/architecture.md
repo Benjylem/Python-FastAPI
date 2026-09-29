@@ -1,330 +1,330 @@
 # Root Override — Architecture Back-End
 
-Escape game 100% back-end (pas de front à coder). L'API expose l'état du jeu,
-valide les réponses des 4 salles, gère le minuteur de 60 min et les indices d'Eve.
+Escape game 100% back-end (pas de front). Une équipe joue via l'API : elle se
+constitue dans un lobby, lance la partie, puis doit résoudre 4 salles en
+60 minutes. L'API expose l'état du jeu, valide les réponses, gère le chrono
+et les indices de l'IA Eve.
 
-## 1. Machine à états du jeu
+Toutes les données sont **en mémoire** (dicts Python dans `app/data/`) : pas de
+base de données, c'est un choix assumé pour ce projet (voir section 8).
+
+Pour tester chaque route à la main : [`tests-curl.md`](tests-curl.md).
+
+## 1. Machine à états d'une partie
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Lobby
-    Lobby --> Salle1_ParFeu: POST /sessions/start
-    Salle1_ParFeu --> Salle2_ProxyLogs: réponse validée
+    [*] --> Lobby: POST /sessions/start
+    Lobby --> Lobby: des joueurs rejoignent ou quittent
+    Lobby --> Salle1_PareFeu: launch, chrono de 60 min
+    Salle1_PareFeu --> Salle2_ProxyLogs: réponse validée
     Salle2_ProxyLogs --> Salle3_ContreMesures: réponse validée
     Salle3_ContreMesures --> Salle4_NoyauCentral: réponse validée
-    Salle4_NoyauCentral --> Victoire: patch + reboot validés
-    Salle1_ParFeu --> GameOver: timer = 0
-    Salle2_ProxyLogs --> GameOver: timer = 0
-    Salle3_ContreMesures --> GameOver: timer = 0
-    Salle4_NoyauCentral --> GameOver: timer = 0
+    Salle4_NoyauCentral --> Victoire: patch validé
+    Salle1_PareFeu --> GameOver: chrono = 0
+    Salle2_ProxyLogs --> GameOver: chrono = 0
+    Salle3_ContreMesures --> GameOver: chrono = 0
+    Salle4_NoyauCentral --> GameOver: chrono = 0
     Victoire --> [*]
     GameOver --> [*]
 ```
+
+Côté code, ces états correspondent à `StatutPartie` (`lobby`, `in_progress`,
+`victory`, `game_over`) et à `Session.current_room` (1 à 4).
 
 ## 2. Séquence : soumission d'une réponse
 
 ```mermaid
 sequenceDiagram
-    participant Equipe as Équipe (client externe / Thunder Client)
-    participant API as FastAPI
-    participant Svc as RoomService
-    participant DB as DB (SQLite/Postgres)
+    participant Equipe as Équipe (curl / Swagger)
+    participant API as Router sessions.py
+    participant Svc as session_service
+    participant Session as Session (domain)
+    participant Enigme as Enigme (domain)
+    participant Main as main.py (handler)
 
-    Equipe->>API: POST /sessions/{id}/rooms/{room}/submit {answer}
-    API->>Svc: valider(session, room, answer)
-    Svc->>DB: charger session + enigme active
-    DB-->>Svc: session, enigme, temps restant
-    alt temps écoulé
-        Svc-->>API: 410 GameOver
-    else réponse correcte
-        Svc->>DB: enregistrer Attempt(correct), avancer current_room
-        Svc-->>API: room suivante + message Eve
-    else réponse incorrecte
-        Svc->>DB: enregistrer Attempt(incorrect), appliquer pénalité éventuelle
-        Svc-->>API: indice / message d'échec
+    Equipe->>API: POST /sessions/{id}/rooms/{n}/submit {answer}
+    API->>API: validation Pydantic du corps (sinon 422)
+    API->>Svc: submit(session_id, n, answer)
+    Svc->>Session: verifier_timer()
+    alt chrono écoulé / salle déjà résolue / partie finie
+        Svc-->>Main: raise Conflict
+        Main-->>Equipe: 409
+    else salle pas encore débloquée
+        Svc-->>Main: raise Forbidden
+        Main-->>Equipe: 403
+    else salle active
+        Svc->>Session: soumettre(salle, answer)
+        Session->>Enigme: check_solution(answer)
+        Enigme-->>Session: True / False
+        opt réponse correcte
+            Session->>Session: reward dans l'inventaire, salle suivante (ou victoire)
+        end
+        Svc-->>API: {success, reward, current_room, game_status, temps_restant}
+        API->>API: log INFO du résultat
+        API-->>Equipe: 200
     end
-    API-->>Equipe: JSON {status, next_room, eve_message, time_left}
 ```
 
-## 3. Composants applicatifs (dossiers `app/`)
+Le chrono n'a pas de tâche de fond : `verifier_timer()` est appelé à chaque
+accès à une session et bascule en `game_over` si le temps est écoulé.
+
+## 3. Organisation du code (`app/`)
 
 ```mermaid
 flowchart TD
-    subgraph API["app/routers"]
+    MAIN[main.py<br/>routers, handler d'erreurs métier]
+    CORE[core/logging_config.py]
+    subgraph ROUTERS["app/routers — endpoints HTTP + logs"]
         R1[sessions.py]
         R2[rooms.py]
-        R3[hints.py]
+        R3[players.py]
     end
-    subgraph SVC["app/services"]
-        S1[session_service.py]
-        S2[room_service.py]
-        S3[timer_service.py]
-        S4[eve_service.py]
+    subgraph SCHEMAS["app/schemas — modèles d'API Pydantic"]
+        SC1[session.py]
+        SC2[enigme.py]
+        SC3[player.py]
     end
-    subgraph MOD["app/models"]
-        M1[Team / Session]
-        M2[Room / Enigma]
-        M3[Attempt]
-        M4[Hint]
+    subgraph SERVICES["app/services — logique applicative"]
+        SV1[session_service.py]
+        SV2[player_service.py]
+        SV3[room_service.py]
+        SV4[exceptions.py<br/>NotFound, Forbidden, Conflict]
     end
-    subgraph CORE["app/core"]
-        C1[config.py]
-        C2[database.py]
-        C3[security.py]
+    subgraph DOMAIN["app/domain — modèles métier"]
+        D1[session.py<br/>Session, Inventaire, StatutPartie]
+        D2[Enigme.py<br/>Enigme et sous-classes]
+        D3[Room.py<br/>Salle]
+        D4[players.py<br/>Player]
+        D5[GameElement.py]
     end
-    SCH[app/schemas]
+    subgraph DATA["app/data — données en mémoire"]
+        DA1[salles.py<br/>les 4 salles et leurs énigmes]
+        DA2[indices.py<br/>indices d'Eve]
+        DA3[sessions.py]
+        DA4[players.py]
+    end
 
-    R1 --> S1
-    R2 --> S2
-    R3 --> S4
-    S1 --> M1
-    S2 --> M2
-    S2 --> M3
-    S2 --> S3
-    S4 --> M4
-    S1 --> CORE
-    S2 --> CORE
-    R1 --> SCH
-    R2 --> SCH
+    MAIN --> ROUTERS
+    MAIN --> CORE
+    R1 --> SC1
+    R1 --> SC2
+    R3 --> SC3
+    R1 --> SV1
+    R2 --> SV3
+    R3 --> SV2
+    SV1 --> SV2
+    SV1 --> SV3
+    SV1 --> D1
+    SV1 --> DA3
+    SV2 --> DA4
+    SV3 --> DA1
+    D1 --> DA1
+    D1 --> DA2
+    D1 --> D4
+    D3 --> D2
+    DA1 --> D3
 ```
 
-## 4. Modèle de données
+| Dossier | Rôle |
+|---|---|
+| `main.py` | Monte les routers, active les logs et traduit les erreurs métier en codes HTTP. |
+| `routers/` | Uniquement les routes : reçoit la requête validée, appelle un service, journalise l'action, renvoie le résultat. |
+| `schemas/` | Modèles Pydantic de l'API : valide les entrées (422) et décrit les sorties (`SessionState`, `PlayerRead`). |
+| `services/` | Logique applicative : règles d'accès (lobby, salle verrouillée, partie finie), équipes, soumissions, indices. Ne connaît pas HTTP : lève `NotFound`, `Forbidden` ou `Conflict`. |
+| `domain/` | Modèles métier en Python pur : vérifier une réponse, avancer, chrono, inventaire. |
+| `data/` | Les données « en dur » et les dicts qui servent de stockage. |
+| `core/` | Configuration transverse (logging). |
 
-```mermaid
-erDiagram
-    TEAM ||--o{ SESSION : joue
-    SESSION ||--o{ ATTEMPT : contient
-    ROOM ||--o{ ENIGMA : contient
-    ROOM ||--o{ HINT : propose
-    ENIGMA ||--o{ ATTEMPT : reçoit
+**Pourquoi pas de dossier `models/` ?** Dans un projet avec base de données,
+`models/` contient les modèles ORM (les tables). Ici il n'y a pas de base : nos
+modèles sont de deux sortes, rangés selon leur rôle pour ne pas les mélanger :
 
-    TEAM {
-        int id
-        string name
-    }
-    SESSION {
-        int id
-        int team_id
-        int current_room
-        datetime started_at
-        string status
-    }
-    ROOM {
-        int id
-        int order
-        string name
-        string codename
-    }
-    ENIGMA {
-        int id
-        int room_id
-        string prompt
-        string answer_hash
-        string type
-    }
-    ATTEMPT {
-        int id
-        int session_id
-        int enigma_id
-        string submitted_answer
-        bool is_correct
-        datetime submitted_at
-    }
-    HINT {
-        int id
-        int room_id
-        string text
-        int penalty_seconds
-    }
-```
+- `domain/` : les **modèles métier** (`Session`, `Salle`, `Enigme`, `Player`),
+  des classes Python qui portent les règles du jeu ;
+- `schemas/` : les **modèles d'API** Pydantic, qui ne font que valider et
+  sérialiser.
 
-## 4bis. Hiérarchie métier (héritage `Salle`, `Boss`, `Enigme`)
+`app/domain/Item.py` et `app/domain/Objectif.py` existent mais sont vides :
+l'inventaire est géré par la classe `Inventaire` dans `domain/session.py`.
 
-Cette couche est **pure logique Python**, séparée des modèles SQLAlchemy (section 4).
-Elle vit dans `app/domain/` et encapsule les règles du jeu ; les modèles DB ne
-font que persister l'état (session, tentatives, temps restant). Le
-`room_service.py` fait le pont : il charge l'état DB, instancie la bonne
-sous-classe de `Salle`, appelle ses méthodes, puis persiste le résultat.
+## 4. Modèle du domaine
 
 ```mermaid
 classDiagram
+    class GameElement {
+        +int id
+        +str name
+        +str bio
+    }
     class Salle {
-        <<abstract>>
-        +int ordre
-        +str nom
         +Enigme enigme
-        +verifier_reponse(reponse) bool
-        +indice() str
-        +message_eve_intro() str
-        +message_eve_succes() str
-    }
-    class Salle1ParFeu {
-        +verifier_reponse(reponse) bool
-    }
-    class Salle2ProxyLogs {
-        +verifier_reponse(reponse) bool
-    }
-    class Salle3ContreMesures {
-        -Boss boss
-        +verifier_reponse(reponse) bool
-    }
-    class Salle4NoyauCentral {
-        -Boss boss
-        +verifier_reponse(reponse) bool
-        +appliquer_patch(code) bool
-    }
-    class Boss {
-        +str nom
-        +int penalite_secondes
-        +bool actif
-        +attaquer(session) None
-        +neutraliser() None
+        +str reward
     }
     class Enigme {
+        <<abstract>>
+        +int id
         +str prompt
+        +check_solution(answer) bool
+    }
+    class EnigmeChaine {
         +str reponse_attendue
-        +verifier(reponse) bool
+        +bool ignorer_casse
+        +check_solution(answer) bool
+    }
+    class EnigmeConditionnelle {
+        +dict conditions_attendues
+        +check_solution(answer) bool
+    }
+    class EnigmePatch {
+        +check_solution(answer) bool
+    }
+    class Session {
+        +int id
+        +str team_name
+        +int current_room
+        +StatutPartie status
+        +datetime started_at
+        +datetime ended_at
+        +timedelta penalite
+        +dict indices_reveles
+        +Inventaire inventaire
+        +players() list~Player~
+        +temps_restant() int
+        +lancer()
+        +soumettre(salle, answer) bool
+        +verifier_timer()
+        +demander_indice(salle_id) str
+    }
+    class Inventaire {
+        +dict items
+        +ajouter(reward)
+        +possede(reward) bool
+    }
+    class Player {
+        +int id
+        +str name
+        +int session_id
     }
 
-    Salle <|-- Salle1ParFeu
-    Salle <|-- Salle2ProxyLogs
-    Salle <|-- Salle3ContreMesures
-    Salle <|-- Salle4NoyauCentral
+    GameElement <|-- Salle
+    Enigme <|-- EnigmeChaine
+    Enigme <|-- EnigmeConditionnelle
+    EnigmeChaine <|-- EnigmePatch
     Salle o-- Enigme
-    Salle3ContreMesures o-- Boss
-    Salle4NoyauCentral o-- Boss
+    Session *-- Inventaire
+    Session ..> Salle : joue
+    Player --> Session : session_id
 ```
 
 Points clés :
 
-- `Salle` est **abstraite** (ABC + `@abstractmethod`) : elle impose le contrat
-  (`verifier_reponse`, `indice`, messages d'Eve) mais chaque salle a sa propre
-  logique d'énigme dans sa sous-classe.
-- `Boss` modélise l'IA adverse. Dans l'histoire elle "attaque" activement en
-  Salle 3 (la boucle de rétroaction à désamorcer) et réapparaît en Salle 4
-  (le noyau corrompu à patcher) — d'où la composition `Salle3`/`Salle4 o-- Boss`
-  plutôt qu'un héritage : le Boss n'est pas une salle, c'est un adversaire
-  qu'une salle peut contenir.
-- `Enigme` reste une classe simple (pas besoin d'héritage si la logique de
-  vérification est juste "comparer une réponse attendue") — sauf si tu veux
-  plusieurs *types* d'énigmes (QCM, calcul, texte libre) : dans ce cas
-  `Enigme` peut elle-même devenir abstraite avec des sous-classes
-  `EnigmeTexte`, `EnigmeQCM`, etc.
-- Chaque `Salle1ParFeu`, `Salle2ProxyLogs`, etc. ne redéfinit que
-  `verifier_reponse()` (et éventuellement `indice()`), tout le reste est
-  hérité de `Salle` → c'est l'endroit où le polymorphisme est visible et
-  évaluable par un correcteur.
+- **Polymorphisme sur les énigmes** : `Enigme` est abstraite (`ABC`) et impose
+  `check_solution()`. Chaque sous-classe a sa façon de vérifier :
+  - `EnigmeChaine` (salles 1 et 2) compare une chaîne, avec ou sans casse ;
+  - `EnigmeConditionnelle` (salle 3) compare un dict clé par clé, **type
+    compris** (sinon `1` serait accepté à la place de `true`) ;
+  - `EnigmePatch` (salle 4) hérite d'`EnigmeChaine` et ignore en plus casse
+    et espaces.
+- **Une seule source de vérité par salle** : chaque `Salle` porte son énigme et
+  son reward, dans `app/data/salles.py`.
+- **Lien joueur ↔ équipe** : porté uniquement par `Player.session_id`.
+  `Session.players` filtre les joueurs au lieu de tenir une seconde liste.
+- **Inventaire partagé** : un booléen par reward de salle, commun à toute
+  l'équipe. La salle 4 n'a pas de reward : la réussir fait gagner.
 
-Squelette minimal (`app/domain/salles.py`) :
+### Les 4 salles
 
-```python
-from abc import ABC, abstractmethod
+| # | Salle | Type d'énigme | Principe |
+|---|---|---|---|
+| 1 | Pare-Feu | `EnigmeChaine` (casse ignorée) | Décoder une clé en Base64 |
+| 2 | Proxy & Logs | `EnigmeChaine` (casse exacte) | Retrouver le token admin accepté dans des logs |
+| 3 | Contre-Mesures | `EnigmeConditionnelle` | Renvoyer un état JSON corrigé (mêmes clés, mêmes types) |
+| 4 | Noyau Central | `EnigmePatch` | Écrire la commande de reboot |
 
-class Enigme:
-    def __init__(self, prompt: str, reponse_attendue: str):
-        self.prompt = prompt
-        self.reponse_attendue = reponse_attendue
+### Chrono et indices d'Eve
 
-    def verifier(self, reponse: str) -> bool:
-        return reponse.strip().lower() == self.reponse_attendue.strip().lower()
+- Durée : `DUREE_PARTIE` = 60 min, à partir du `launch`.
+- `temps_restant = DUREE_PARTIE - pénalités - temps écoulé`. Il vaut `None`
+  en lobby et reste figé à la victoire (`ended_at`).
+- Eve a 3 indices par salle (`app/data/indices.py`), du plus vague au plus
+  précis. Chaque indice coûte `PENALITE_INDICE` = 2 min, et peut donc
+  provoquer le game over.
 
-
-class Salle(ABC):
-    ordre: int
-    nom: str
-
-    def __init__(self, enigme: Enigme):
-        self.enigme = enigme
-
-    def verifier_reponse(self, reponse: str) -> bool:
-        return self.enigme.verifier(reponse)
-
-    @abstractmethod
-    def indice(self) -> str: ...
-
-    @abstractmethod
-    def message_eve_intro(self) -> str: ...
-
-    def message_eve_succes(self) -> str:
-        return "Bien joué, tu peux avancer."
-
-
-class Salle1ParFeu(Salle):
-    ordre = 1
-    nom = "Le Pare-Feu de Périphérie"
-
-    def indice(self) -> str:
-        return "Regarde le masque de sous-réseau..."
-
-    def message_eve_intro(self) -> str:
-        return "Attention, ils vont tracer ton IP, fais vite."
-
-
-class Boss:
-    def __init__(self, nom: str, penalite_secondes: int = 60):
-        self.nom = nom
-        self.penalite_secondes = penalite_secondes
-        self.actif = True
-
-    def attaquer(self, session) -> None:
-        session.temps_restant -= self.penalite_secondes
-
-    def neutraliser(self) -> None:
-        self.actif = False
-
-
-class Salle3ContreMesures(Salle):
-    ordre = 3
-    nom = "La Matrice des Contre-Mesures"
-
-    def __init__(self, enigme: Enigme):
-        super().__init__(enigme)
-        self.boss = Boss(nom="Boucle de rétroaction")
-
-    def indice(self) -> str:
-        return "La boucle se répète toutes les X secondes, trouve le motif."
-
-    def message_eve_intro(self) -> str:
-        return "Il attaque en boucle, désamorce vite le processus !"
-
-    def verifier_reponse(self, reponse: str) -> bool:
-        correct = super().verifier_reponse(reponse)
-        if correct:
-            self.boss.neutraliser()
-        return correct
-```
-
-Ensuite, un petit "registre" fait le lien salle DB ↔ classe Python (utile dans
-`room_service.py`) :
-
-```python
-SALLES: dict[int, type[Salle]] = {
-    1: Salle1ParFeu,
-    2: Salle2ProxyLogs,
-    3: Salle3ContreMesures,
-    4: Salle4NoyauCentral,
-}
-```
-
-## 5. Endpoints prévus (v1)
+## 5. Endpoints
 
 | Méthode | Route | Rôle |
 |---|---|---|
-| POST | `/sessions/start` | crée une session d'équipe, démarre le timer |
-| GET | `/sessions/{id}/state` | salle actuelle, temps restant, statut |
-| GET | `/sessions/{id}/rooms/{room}/enigma` | énoncé de l'énigme active (jamais la réponse) |
-| POST | `/sessions/{id}/rooms/{room}/submit` | valide une réponse, fait avancer la session |
-| GET | `/sessions/{id}/rooms/{room}/hint` | indice d'Eve (avec pénalité de temps éventuelle) |
-| POST | `/sessions/{id}/rooms/4/reboot` | validation finale du patch + reboot |
+| GET | `/` | Health check |
+| GET | `/rooms/` | Ids des salles |
+| GET | `/rooms/{id}` | Nom et bio d'une salle (carte publique, sans énoncé) |
+| GET | `/players/` | Liste des joueurs |
+| GET | `/players/{id}` | Un joueur |
+| POST | `/players/` | Créer un joueur |
+| PUT | `/players/{id}` | Renommer un joueur |
+| DELETE | `/players/{id}` | Supprimer un joueur |
+| POST | `/sessions/start` | Créer une équipe, en lobby |
+| GET | `/sessions/{id}/state` | État : salle, statut, temps restant, pénalités, joueurs, inventaire |
+| POST | `/sessions/{id}/players` | Un joueur rejoint l'équipe |
+| DELETE | `/sessions/{id}/players/{player_id}` | Un joueur quitte l'équipe |
+| POST | `/sessions/{id}/launch` | Lancer la partie, démarrer le chrono |
+| GET | `/sessions/{id}/rooms/{n}/enigma` | Énoncé d'une salle débloquée (jamais la réponse) |
+| POST | `/sessions/{id}/rooms/{n}/submit` | Répondre, `{"answer": "..."}` (salles 1, 2, 4) |
+| POST | `/sessions/{id}/rooms/3/submit` | Répondre, `{"conditions": {...}}` (salle 3) |
+| POST | `/sessions/{id}/rooms/{n}/hint` | Demander l'indice suivant à Eve (-2 min) |
+| GET | `/sessions/{id}/rooms/{n}/hints` | Relire les indices déjà obtenus (gratuit) |
 
-## 6. Ordre de développement conseillé
+### Codes d'erreur
 
-1. Scaffold FastAPI + config + DB (SQLAlchemy) + `.env`
-2. Modèles + migrations Alembic (Team, Session, Room, Enigma, Attempt, Hint)
-3. Session lifecycle (`start`, `state`, timer serveur)
-4. Salle 1 — Pare-feu (logique la plus simple, valide le pipeline complet)
-5. Salle 2 — Proxy/Logs
-6. Salle 3 — Contre-mesures
-7. Salle 4 — Noyau central (patch + reboot final)
-8. Indices d'Eve (`hints`) — transverse, peut être fait en parallèle
-9. Tests pytest sur chaque salle + tests d'intégration bout en bout
+| Code | Cas |
+|---|---|
+| `404` | Session, salle, joueur ou route inconnus |
+| `403` | Salle pas encore débloquée |
+| `409` | Partie pas lancée, déjà lancée ou terminée ; salle déjà résolue ; temps écoulé ; plus d'indice ; conflit d'équipe |
+| `422` | Corps de requête invalide (réponse vide, mauvais format, nom trop court…) |
+
+## 6. Journalisation
+
+Configurée une seule fois dans `app/core/logging_config.py` (appelée par
+`main.py`), au format `date | niveau | module | message`. Chaque router a son
+logger (`logging.getLogger(__name__)`) et écrit en `INFO` :
+
+- les recherches : liste ou lecture d'une salle, d'un joueur, d'une session ;
+- les actions : création de session, joueur ajouté ou retiré, lancement,
+  réponse soumise (avec `success`), indice demandé, CRUD joueurs.
+
+Le log est écrit **après** l'appel au service : une action refusée (404, 403,
+409) n'est donc pas journalisée comme réussie.
+
+Reste à faire (autres couches) : un `WARNING` pour chaque erreur, et un handler
+global pour les exceptions inattendues.
+
+## 7. Tests
+
+- `tests/` : suite pytest (`python -m pytest -q`) sur les rooms, les joueurs,
+  les énigmes, les services appelés sans HTTP, les logs des routers, et tout
+  le déroulé d'une session (lobby, équipe, progression, victoire, chrono,
+  game over, indices). Le chrono est testé en reculant `started_at`
+  plutôt qu'en attendant 60 min.
+- `tests/conftest.py` remet les joueurs et les sessions à zéro entre chaque
+  test, car ce sont des dicts globaux.
+- `tests/curl_requests.sh` : rejoue une partie complète contre un vrai serveur
+  et vérifie le code HTTP de chaque requête.
+
+## 8. Choix de conception
+
+- **Pas de base de données** : le stockage en mémoire suffit pour le périmètre
+  du projet. Tout repart à zéro au redémarrage du serveur.
+- **Services sans HTTP** : les services lèvent des exceptions métier
+  (`NotFound`, `Forbidden`, `Conflict`) et c'est `main.py` qui choisit le code
+  HTTP. On peut donc tester et réutiliser la logique sans passer par FastAPI.
+- **Pas de tâche de fond pour le chrono** : le temps est recalculé à chaque
+  accès à la session, ce qui est plus simple et donne le même résultat.
+- **Route dédiée pour la salle 3** : son corps est un dict et non une chaîne.
+  Elle est déclarée avant la route générique pour que FastAPI la choisisse
+  en premier, et la validation du format reste dans Pydantic.
+- **Indice en `POST`** : demander un indice modifie l'état (pénalité de temps),
+  ce qui n'est pas le rôle d'un `GET`. La relecture, elle, est un `GET`.
+- **L'énoncé passe par la session** : `/rooms/{id}` ne donne que la carte
+  publique, pour qu'une équipe ne puisse pas lire une salle qu'elle n'a pas
+  encore débloquée.

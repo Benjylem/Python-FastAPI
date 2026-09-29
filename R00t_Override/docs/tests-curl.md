@@ -2,7 +2,7 @@
 
 Ce guide liste une requête `curl` par cas à vérifier, avec le résultat attendu.
 Il couvre tout ce qui est implémenté pour l'instant : `rooms`, `players` et
-`sessions` (lobby, équipe, partie complète, timer).
+`sessions` (lobby, équipe, partie complète, timer, indices d'Eve).
 
 > ⚠️ Toutes les données sont en mémoire : chaque redémarrage du serveur remet
 > l'API à zéro. Les commandes sont écrites **dans l'ordre**, pour un serveur tout
@@ -40,6 +40,7 @@ POST /sessions/start          -> équipe créée, statut "lobby"
 POST /sessions/1/players      -> des joueurs rejoignent l'équipe
 POST /sessions/1/launch       -> statut "in_progress", le chrono de 60 min démarre
 GET  /sessions/1/rooms/N/enigma   -> énoncé de la salle active
+POST /sessions/1/rooms/N/hint     -> (optionnel) indice d'Eve, coûte 2 min
 POST /sessions/1/rooms/N/submit   -> bonne réponse = reward + salle suivante
 ...salle 4 réussie            -> statut "victory"
 ...ou chrono à 0              -> statut "game_over"
@@ -188,6 +189,30 @@ Le chrono dure **60 minutes**. Quand `temps_restant` atteint `0`, la session
 passe en `"status": "game_over"` et toute réponse renvoie
 `409 "Temps écoulé : la partie est perdue"`. Ce cas n'est pas faisable à la main
 (il faudrait attendre une heure) : il est couvert par les tests pytest.
+
+### Demander un indice à Eve
+
+Eve a **3 indices par salle**, du plus vague au plus précis. Chaque indice
+demandé retire **2 minutes** au chrono (`penalite_secondes` dans l'état de la
+session). Si la pénalité fait tomber le chrono à 0, la partie passe en
+`game_over`. On ne peut demander un indice que pour la salle active.
+
+```bash
+# Indice suivant -> 200, {"room": 1, "eve": "...", "numero": 1, "total": 3,
+# "penalite_secondes": 120, "temps_restant": ..., "game_status": "in_progress"}
+curl -X POST $BASE_URL/sessions/1/rooms/1/hint
+
+# Relire les indices déjà obtenus -> 200, gratuit
+# {"room": 1, "indices": ["..."], "restants": 2}
+curl $BASE_URL/sessions/1/rooms/1/hints
+
+# Salle pas encore débloquée -> 403
+curl -X POST $BASE_URL/sessions/1/rooms/2/hint
+```
+
+Après le 3e indice d'une salle, une nouvelle demande renvoie
+`409 "Eve n'a plus d'indice pour cette salle"`. Une salle déjà résolue renvoie
+aussi `409`.
 
 ### Jouer les 4 salles
 

@@ -69,10 +69,14 @@ run "GET state (temps_restant ~3600)"         200 "$BASE_URL/sessions/1/state"
 echo "--- Session : partie complète ---"
 run "GET enigma salle 1"                      200 "$BASE_URL/sessions/1/rooms/1/enigma"
 run "GET enigma salle 2 (verrouillée)"        403 "$BASE_URL/sessions/1/rooms/2/enigma"
+run "POST indice d'Eve salle 1 (-2 min)"      200 -X POST "$BASE_URL/sessions/1/rooms/1/hint"
+run "GET indices déjà obtenus (gratuit)"      200 "$BASE_URL/sessions/1/rooms/1/hints"
+run "POST indice salle 2 (verrouillée)"       403 -X POST "$BASE_URL/sessions/1/rooms/2/hint"
 run "POST salle 2 trop tôt"                   403 -X POST "$BASE_URL/sessions/1/rooms/2/submit" -H "$JSON" -d '{"answer": "ADMIN_TOKEN_X987F"}'
 run "POST salle 1 réponse vide"               422 -X POST "$BASE_URL/sessions/1/rooms/1/submit" -H "$JSON" -d '{"answer": "   "}'
 run "POST salle 1 mauvaise réponse"           200 -X POST "$BASE_URL/sessions/1/rooms/1/submit" -H "$JSON" -d '{"answer": "faux"}'
 run "POST salle 1 bonne réponse"              200 -X POST "$BASE_URL/sessions/1/rooms/1/submit" -H "$JSON" -d '{"answer": "root_override"}'
+run "POST indice salle 1 déjà résolue"       409 -X POST "$BASE_URL/sessions/1/rooms/1/hint"
 run "POST salle 1 déjà résolue"               409 -X POST "$BASE_URL/sessions/1/rooms/1/submit" -H "$JSON" -d '{"answer": "root_override"}'
 run "POST salle 2 bonne réponse"              200 -X POST "$BASE_URL/sessions/1/rooms/2/submit" -H "$JSON" -d '{"answer": "ADMIN_TOKEN_X987F"}'
 run "POST salle 3 format answer"              422 -X POST "$BASE_URL/sessions/1/rooms/3/submit" -H "$JSON" -d '{"answer": "x"}'
