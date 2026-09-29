@@ -1,14 +1,13 @@
 # Tester l'API à la main avec curl
 
 Ce guide liste une requête `curl` par cas à vérifier, avec le résultat attendu.
-Il couvre tout ce qui est implémenté pour l'instant : `rooms`, `players` et
-`sessions` (lobby, équipe, partie complète, timer, indices d'Eve).
+Il couvre tout ce qui est implémenté pour l'instant : `rooms`, `players` et `sessions`
+(équipe, lobby, lancement, chrono de 60 min, indices d'Eve, les 4 salles,
+inventaire partagé, victoire).
 
-> ⚠️ Toutes les données sont en mémoire : chaque redémarrage du serveur remet
-> l'API à zéro. Les commandes sont écrites **dans l'ordre**, pour un serveur tout
-> juste démarré (les ids `1`, `2`… des sessions en dépendent).
-
-> 🔑 Ce document contient les réponses des 4 énigmes.
+> Toutes les données sont en mémoire : chaque redémarrage du serveur remet l'API
+> à zéro. Les exemples des sections 4 à 8 supposent un serveur **fraîchement
+> démarré** (première session = id `1`, joueurs de départ `1` Joe et `2` Jasmine).
 
 ## 1. Lancer le serveur
 
@@ -20,33 +19,55 @@ uvicorn app.main:app --reload
 ```
 
 L'API écoute sur `http://127.0.0.1:8000`. La doc interactive Swagger est aussi
-disponible sur <http://127.0.0.1:8000/docs> (bouton **Try it out** sur chaque route).
+disponible sur <http://127.0.0.1:8000/docs>.
 
-Dans un **second terminal**, définis l'URL de base (en majuscules, et à refaire
-dans chaque nouveau terminal) :
+> Avec `--reload`, chaque sauvegarde d'un fichier redémarre le serveur et efface
+> les sessions. Pour tester sans toucher au code, lance-le sans `--reload`.
+
+Dans un second terminal, définis l'URL de base et l'en-tête JSON :
 
 ```bash
 BASE_URL=http://127.0.0.1:8000
+JSON="Content-Type: application/json"
 ```
 
 Pour voir le code HTTP en plus du corps de la réponse, ajoute
-`-w "\nHTTP %{http_code}\n"` à n'importe quelle commande (ou `-i` pour voir tous
-les en-têtes).
+`-w "\nHTTP %{http_code}\n"` à n'importe quelle commande (ou utilise `-i` pour
+voir tous les en-têtes).
 
-## 2. Déroulé d'une partie
+> **zsh** : par défaut, zsh refuse les lignes `# commentaire` collées dans le
+> terminal (`command not found: #`). Lance une fois `setopt interactivecomments`
+> pour pouvoir copier les blocs ci-dessous tels quels.
 
+## 2. Tout lancer d'un coup
+
+Le script [`tests/curl_requests.sh`](../tests/curl_requests.sh) joue tout le
+parcours (sections 4 à 8), vérifie le code HTTP attendu de chaque requête
+(✔ vert / ✘ rouge) et affiche un bilan :
+
+```bash
+./tests/curl_requests.sh
 ```
-POST /sessions/start          -> équipe créée, statut "lobby"
-POST /sessions/1/players      -> des joueurs rejoignent l'équipe
-POST /sessions/1/launch       -> statut "in_progress", le chrono de 60 min démarre
-GET  /sessions/1/rooms/N/enigma   -> énoncé de la salle active
-POST /sessions/1/rooms/N/hint     -> (optionnel) indice d'Eve, coûte 2 min
-POST /sessions/1/rooms/N/submit   -> bonne réponse = reward + salle suivante
-...salle 4 réussie            -> statut "victory"
-...ou chrono à 0              -> statut "game_over"
+
+Sur une autre adresse :
+
+```bash
+BASE_URL=http://127.0.0.1:8001 ./tests/curl_requests.sh
 ```
 
-## 3. Health check
+Le script crée ses propres joueurs et équipes et supprime ses joueurs à la fin :
+il peut être relancé sans redémarrer le serveur. Code de sortie `0` si tout est OK.
+
+## 3. Tests automatiques
+
+Les mêmes cas (et plus) sont couverts par pytest, **sans serveur à lancer** :
+
+```bash
+python -m pytest -q     # résumé
+python -m pytest -v     # nom de chaque test
+```
+
+## 4. Health check
 
 ```bash
 curl $BASE_URL/
@@ -54,81 +75,78 @@ curl $BASE_URL/
 
 Attendu : `200`, `{"status": "ok", "message": "..."}`
 
-## 4. Rooms (carte publique)
+## 5. Rooms : la carte publique
 
-Ces routes donnent seulement le nom et la bio des salles. L'énoncé d'une énigme
-se lit via une session (voir section 6).
+`/rooms` ne donne que le nom et la bio de chaque salle. L'énoncé de l'énigme
+n'est lisible que via la session de l'équipe, une fois la salle débloquée
+(voir section 8).
 
 ```bash
-# Liste des salles -> 200, [1, 2, 3, 4]
+# Lister les salles -> 200, [1, 2, 3, 4]
 curl $BASE_URL/rooms/
 
-# Détail -> 200, {"id": 1, "name": "Pare-Feu", "bio": "..."}
+# Détail d'une salle -> 200, id, name, bio (pas d'énoncé, pas de réponse)
 curl $BASE_URL/rooms/1
 
 # Salle inconnue -> 404, {"detail": "Salle introuvable"}
 curl $BASE_URL/rooms/99
 ```
 
-## 5. Players
+## 6. Players
 
-Joueurs présents au démarrage : `1` (Joe) et `2` (Jasmine).
-Corps attendu : `{"name": "<3 caractères minimum>"}`. Un joueur est renvoyé
-sous la forme `{"id": 1, "name": "Joe", "session_id": null}` (`session_id` =
-son équipe).
+Joueurs présents au démarrage : `1` (Joe) et `2` (Jasmine), sans équipe.
+Format du corps : `{"name": "<3 caractères minimum>"}`. Un joueur n'a pas de
+rewards : ils sont dans l'inventaire partagé de son équipe.
+
+Les exemples créent Alice (id `3`) pour la modifier et la supprimer, afin de
+garder Joe et Jasmine pour la suite.
 
 ```bash
-# Lister -> 200
+# Lister -> 200, Joe et Jasmine avec "session_id": null
 curl $BASE_URL/players/
 
-# Lire un joueur -> 200
+# Lire un joueur -> 200, Joe
 curl $BASE_URL/players/1
 
 # Joueur inconnu -> 404
 curl $BASE_URL/players/999
 
-# Créer -> 200, Alice avec l'id 3
-curl -X POST $BASE_URL/players/ \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Alice"}'
+# Créer -> 200, {"id": 3, "name": "Alice", "session_id": null}
+curl -X POST $BASE_URL/players/ -H "$JSON" -d '{"name": "Alice"}'
 
 # Nom trop court -> 422
-curl -X POST $BASE_URL/players/ \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Al"}'
+curl -X POST $BASE_URL/players/ -H "$JSON" -d '{"name": "Al"}'
 
-# Renommer -> 200, Joe devient Joseph
-curl -X PUT $BASE_URL/players/1 \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Joseph"}'
+# Modifier -> 200, Alice devient Alicia
+curl -X PUT $BASE_URL/players/3 -H "$JSON" -d '{"name": "Alicia"}'
 
-# Renommer un joueur inconnu -> 404
-curl -X PUT $BASE_URL/players/999 \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Ghost"}'
+# Modifier un joueur inconnu -> 404
+curl -X PUT $BASE_URL/players/999 -H "$JSON" -d '{"name": "Ghost"}'
 
-# Supprimer -> 204 (pas de corps)
-curl -i -X DELETE $BASE_URL/players/2
+# Supprimer -> 204 (pas de corps), puis GET /players/3 renvoie 404
+curl -i -X DELETE $BASE_URL/players/3
 
 # Supprimer un joueur inconnu -> 404
 curl -X DELETE $BASE_URL/players/999
 ```
 
-## 6. Sessions
+Supprimer un joueur le retire aussi de son équipe.
 
-### Créer une équipe (lobby)
+## 7. Sessions : l'équipe
+
+Une session = une équipe et sa partie. Cycle de vie :
+`lobby` (l'équipe se constitue) → `in_progress` (après `launch`, le chrono
+démarre) → `victory` (salle 4 validée) ou `game_over` (chrono à 0).
+
+### Créer l'équipe (lobby)
 
 ```bash
-# Créer -> 200, id 1, "status": "lobby", "started_at": null,
-# "temps_restant": null, "players": [], inventaire vide (tout à false)
-curl -X POST $BASE_URL/sessions/start \
-  -H "Content-Type: application/json" \
-  -d '{"team_name": "Root Squad"}'
+# Créer -> 200, "status": "lobby", "started_at": null, "players": [],
+# inventaire à false
+curl -X POST $BASE_URL/sessions/start -H "$JSON" -d '{"team_name": "Hackers"}'
 
 # Nom d'équipe vide -> 422
-curl -X POST $BASE_URL/sessions/start \
-  -H "Content-Type: application/json" \
-  -d '{"team_name": "   "}'
+curl -X POST $BASE_URL/sessions/start -H "$JSON" -d '{"team_name": "   "}'
 
 # Lire l'état -> 200
 curl $BASE_URL/sessions/1/state
@@ -137,58 +155,84 @@ curl $BASE_URL/sessions/1/state
 curl $BASE_URL/sessions/999/state
 ```
 
-Tant que la partie est en lobby, on ne peut pas jouer :
-
-```bash
-# Énoncé en lobby -> 409, "La partie n'a pas encore été lancée"
-curl $BASE_URL/sessions/1/rooms/1/enigma
-
-# Réponse en lobby -> 409
-curl -X POST $BASE_URL/sessions/1/rooms/1/submit \
-  -H "Content-Type: application/json" \
-  -d '{"answer": "root_override"}'
-
-# Lancer sans joueur -> 409, "Impossible de lancer une partie sans joueur"
-curl -X POST $BASE_URL/sessions/1/launch
-```
-
 ### Composer l'équipe
 
 ```bash
-# Le joueur 1 rejoint l'équipe -> 200, il apparaît dans "players"
-curl -X POST $BASE_URL/sessions/1/players \
-  -H "Content-Type: application/json" \
-  -d '{"player_id": 1}'
+# Lancer sans joueur -> 409
+curl -X POST $BASE_URL/sessions/1/launch
 
-# Rejoindre deux fois -> 409
-curl -X POST $BASE_URL/sessions/1/players \
-  -H "Content-Type: application/json" \
-  -d '{"player_id": 1}'
+# Joe rejoint -> 200, Joe dans "players"
+curl -X POST $BASE_URL/sessions/1/players -H "$JSON" -d '{"player_id": 1}'
+
+# Joe rejoint une deuxième fois -> 409
+curl -X POST $BASE_URL/sessions/1/players -H "$JSON" -d '{"player_id": 1}'
 
 # Joueur inconnu -> 404
-curl -X POST $BASE_URL/sessions/1/players \
-  -H "Content-Type: application/json" \
-  -d '{"player_id": 999}'
+curl -X POST $BASE_URL/sessions/1/players -H "$JSON" -d '{"player_id": 999}'
 ```
 
-### Lancer la partie et le timer
+### Lancer la partie
 
 ```bash
-# Lancer -> 200, "status": "in_progress", "started_at" rempli,
+# Énoncé ou réponse avant le lancement -> 409
+curl $BASE_URL/sessions/1/rooms/1/enigma
+
+# Lancer -> 200, "status": "in_progress", "started_at" renseigné,
 # "temps_restant": 3600 (secondes)
 curl -X POST $BASE_URL/sessions/1/launch
 
-# Lancer une 2e fois -> 409
+# Lancer une deuxième fois -> 409
 curl -X POST $BASE_URL/sessions/1/launch
 
 # Le temps restant diminue à chaque appel
 curl $BASE_URL/sessions/1/state
 ```
 
-Le chrono dure **60 minutes**. Quand `temps_restant` atteint `0`, la session
-passe en `"status": "game_over"` et toute réponse renvoie
-`409 "Temps écoulé : la partie est perdue"`. Ce cas n'est pas faisable à la main
-(il faudrait attendre une heure) : il est couvert par les tests pytest.
+Le chrono dure **60 minutes**. `temps_restant` vaut `null` en lobby et reste
+figé à la victoire. Quand il atteint `0`, la session passe en
+`"status": "game_over"` et toute réponse renvoie
+`409 "Temps écoulé : la partie est perdue"`. Ce cas n'est pas faisable à la
+main (il faudrait attendre une heure) : il est couvert par les tests pytest.
+
+### Changer d'équipe
+
+Un joueur n'est que dans une équipe à la fois : pour changer, il quitte la
+première puis rejoint la seconde. Quitter est possible dans tous les états.
+
+```bash
+# Créer une deuxième équipe (id 2) et y mettre Jasmine
+curl -X POST $BASE_URL/sessions/start -H "$JSON" -d '{"team_name": "Rivaux"}'
+curl -X POST $BASE_URL/sessions/2/players -H "$JSON" -d '{"player_id": 2}'
+
+# Jasmine rejoint Hackers sans quitter Rivaux -> 409
+curl -X POST $BASE_URL/sessions/1/players -H "$JSON" -d '{"player_id": 2}'
+
+# Jasmine quitte Rivaux -> 200, puis rejoint Hackers -> 200
+curl -X DELETE $BASE_URL/sessions/2/players/2
+curl -X POST $BASE_URL/sessions/1/players -H "$JSON" -d '{"player_id": 2}'
+
+# Quitter une équipe dont on ne fait pas partie -> 404
+curl -X DELETE $BASE_URL/sessions/2/players/2
+```
+
+Rejoindre une partie **en cours** est autorisé (retardataire) : le joueur voit
+immédiatement la progression et l'inventaire de l'équipe. Rejoindre une partie
+terminée renvoie `409`.
+
+## 8. Jouer une partie
+
+On ne peut lire et répondre qu'à la salle active (`current_room`) :
+
+| Cas | Code |
+|---|---|
+| Partie pas encore lancée | `409` |
+| Salle pas encore débloquée | `403` « Salle verrouillée » |
+| Salle déjà résolue | `409` « Salle déjà résolue » |
+| Partie terminée (victoire ou temps écoulé) | `409` |
+
+Chaque bonne réponse ajoute le reward de la salle à l'inventaire de l'équipe et
+ouvre la salle suivante. La réponse contient `success`, `message`, `reward`,
+`current_room`, `game_status` et `temps_restant`.
 
 ### Demander un indice à Eve
 
@@ -214,149 +258,99 @@ Après le 3e indice d'une salle, une nouvelle demande renvoie
 `409 "Eve n'a plus d'indice pour cette salle"`. Une salle déjà résolue renvoie
 aussi `409`.
 
-### Jouer les 4 salles
+### Salle 1 : Pare-Feu (clé encodée en Base64)
 
-On ne peut répondre qu'à la **salle active** (`current_room`) :
-
-- une salle suivante renvoie `403 "Salle verrouillée"` ;
-- une salle déjà résolue renvoie `409` ;
-- une partie terminée (victoire ou game over) renvoie `409`.
-
-Chaque réponse renvoie `success`, `message`, `reward`, `current_room`,
-`game_status` et `temps_restant`.
+L'énoncé contient `cm9vdF9vdmVycmlkZQ==` : il faut la décoder et renvoyer la
+clé en clair. La casse est ignorée.
 
 ```bash
-# Énoncé de la salle 1 -> 200, "resolue": false
+# Énoncé -> 200, "resolue": false
 curl $BASE_URL/sessions/1/rooms/1/enigma
 
-# Énoncé de la salle 2 -> 403, pas encore débloquée
+# Salle 2 pas encore débloquée -> 403 (énoncé comme réponse)
 curl $BASE_URL/sessions/1/rooms/2/enigma
-
-# Répondre à la salle 2 trop tôt -> 403
-curl -X POST $BASE_URL/sessions/1/rooms/2/submit \
-  -H "Content-Type: application/json" \
-  -d '{"answer": "ADMIN_TOKEN_X987F"}'
+curl -X POST $BASE_URL/sessions/1/rooms/2/submit -H "$JSON" -d '{"answer": "ADMIN_TOKEN_X987F"}'
 
 # Réponse vide -> 422
-curl -X POST $BASE_URL/sessions/1/rooms/1/submit \
-  -H "Content-Type: application/json" \
-  -d '{"answer": "   "}'
+curl -X POST $BASE_URL/sessions/1/rooms/1/submit -H "$JSON" -d '{"answer": "   "}'
 
-# Mauvaise réponse -> 200, "success": false, "current_room": 1
-curl -X POST $BASE_URL/sessions/1/rooms/1/submit \
-  -H "Content-Type: application/json" \
-  -d '{"answer": "faux"}'
+# Renvoyer la chaîne encore encodée -> 200, "success": false
+curl -X POST $BASE_URL/sessions/1/rooms/1/submit -H "$JSON" -d '{"answer": "cm9vdF9vdmVycmlkZQ=="}'
+
+# Bonne réponse -> 200, "success": true, "reward": "cle_validation_externe", "current_room": 2
+curl -X POST $BASE_URL/sessions/1/rooms/1/submit -H "$JSON" -d '{"answer": "root_override"}'
+
+# Rejouer la salle 1 -> 409 "Salle déjà résolue"
+curl -X POST $BASE_URL/sessions/1/rooms/1/submit -H "$JSON" -d '{"answer": "root_override"}'
 ```
 
-**Salle 1 — Pare-Feu** (clé base64 à décoder, casse ignorée)
+### Salle 2 : Proxy & Logs (token dans un extrait de log)
+
+L'énoncé contient un extrait de log avec des leurres. Le bon token est celui
+dont l'élévation a été acceptée (`status=GRANTED`). La casse compte.
 
 ```bash
-# -> 200, "success": true, "reward": "cle_validation_externe", "current_room": 2
-curl -X POST $BASE_URL/sessions/1/rooms/1/submit \
-  -H "Content-Type: application/json" \
-  -d '{"answer": "root_override"}'
+# Énoncé (affichage lisible des logs, sans jq)
+curl -s $BASE_URL/sessions/1/rooms/2/enigma | python3 -c "import json,sys; print(json.load(sys.stdin)['enigme'])"
 
-# Rejouer la salle 1 -> 409, "Salle déjà résolue"
-curl -X POST $BASE_URL/sessions/1/rooms/1/submit \
-  -H "Content-Type: application/json" \
-  -d '{"answer": "root_override"}'
+# Token leurre en minuscules (status=DENIED) -> 200, "success": false
+curl -X POST $BASE_URL/sessions/1/rooms/2/submit -H "$JSON" -d '{"answer": "admin_token_x987f"}'
+
+# Bon token -> 200, "success": true, "reward": "privileges_intermediaires"
+curl -X POST $BASE_URL/sessions/1/rooms/2/submit -H "$JSON" -d '{"answer": "ADMIN_TOKEN_X987F"}'
 ```
 
-**Salle 2 — Proxy & Logs** (le token admin accepté dans les logs, casse exacte)
+### Salle 3 : Contre-Mesures (payload JSON typé)
+
+Format du corps : `{"conditions": {...}}`. Il faut renvoyer l'état corrigé avec
+exactement les mêmes clés **et les mêmes types** (`true` n'est pas `1`, `80`
+n'est pas `"80"`).
 
 ```bash
-# -> 200, "reward": "privileges_intermediaires", "current_room": 3
-curl -X POST $BASE_URL/sessions/1/rooms/2/submit \
-  -H "Content-Type: application/json" \
-  -d '{"answer": "ADMIN_TOKEN_X987F"}'
-```
+# Énoncé -> 200
+curl $BASE_URL/sessions/1/rooms/3/enigma
 
-**Salle 3 — Contre-Mesures** (corps différent : `{"conditions": {...}}`, avec les
-mêmes clés et les mêmes types que l'état donné dans l'énoncé)
-
-```bash
-# Format "answer" -> 422
-curl -X POST $BASE_URL/sessions/1/rooms/3/submit \
-  -H "Content-Type: application/json" \
-  -d '{"answer": "x"}'
+# Format "answer" des autres salles -> 422
+curl -X POST $BASE_URL/sessions/1/rooms/3/submit -H "$JSON" -d '{"answer": "x"}'
 
 # Conditions vides -> 422
-curl -X POST $BASE_URL/sessions/1/rooms/3/submit \
-  -H "Content-Type: application/json" \
-  -d '{"conditions": {}}'
+curl -X POST $BASE_URL/sessions/1/rooms/3/submit -H "$JSON" -d '{"conditions": {}}'
 
-# Mauvaises conditions -> 200, "success": false
-curl -X POST $BASE_URL/sessions/1/rooms/3/submit \
-  -H "Content-Type: application/json" \
-  -d '{"conditions": {"bypass_firewall": true, "override_lock": "LOCKED", "port_status": 443}}'
+# 1 au lieu de true -> 200, "success": false
+curl -X POST $BASE_URL/sessions/1/rooms/3/submit -H "$JSON" \
+  -d '{"conditions": {"bypass_firewall": 1, "override_lock": "ACTIVE", "port_status": 80}}'
 
-# Bonnes conditions -> 200, "reward": "module_dechiffrement", "current_room": 4
-curl -X POST $BASE_URL/sessions/1/rooms/3/submit \
-  -H "Content-Type: application/json" \
+# Bonnes conditions -> 200, "success": true, "reward": "module_dechiffrement"
+curl -X POST $BASE_URL/sessions/1/rooms/3/submit -H "$JSON" \
   -d '{"conditions": {"bypass_firewall": true, "override_lock": "ACTIVE", "port_status": 80}}'
 ```
 
-**Salle 4 — Noyau Central** (commande de reboot, espaces ignorés)
+### Salle 4 : Noyau Central (patch final)
+
+La commande attendue est `system.reboot(true)`. La casse et les espaces sont
+ignorés.
 
 ```bash
-# -> 200, "success": true, "game_status": "victory"
-curl -X POST $BASE_URL/sessions/1/rooms/4/submit \
-  -H "Content-Type: application/json" \
-  -d '{"answer": "system.reboot(true)"}'
+# Énoncé -> 200
+curl $BASE_URL/sessions/1/rooms/4/enigma
 
-# Répondre après la victoire -> 409, "La partie est terminée"
-curl -X POST $BASE_URL/sessions/1/rooms/4/submit \
-  -H "Content-Type: application/json" \
-  -d '{"answer": "system.reboot(true)"}'
+# Mauvais patch -> 200, "success": false
+curl -X POST $BASE_URL/sessions/1/rooms/4/submit -H "$JSON" -d '{"answer": "system.reboot(false)"}'
 
+# Patch final -> 200, "success": true, "game_status": "victory"
+curl -X POST $BASE_URL/sessions/1/rooms/4/submit -H "$JSON" -d '{"answer": "  System.Reboot( TRUE ) "}'
+
+# Soumettre après la victoire -> 409
+curl -X POST $BASE_URL/sessions/1/rooms/4/submit -H "$JSON" -d '{"answer": "system.reboot(true)"}'
+```
+
+### Fin de partie
+
+```bash
 # État final -> "status": "victory", inventaire entièrement à true,
-# "temps_restant" figé au moment de la victoire
+# "temps_restant" figé, "penalite_secondes" = temps perdu en indices
 curl $BASE_URL/sessions/1/state
-```
 
-### Changer d'équipe
-
-Un joueur ne peut être que dans une équipe à la fois.
-
-```bash
-# Créer une 2e équipe -> 200, id 2
-curl -X POST $BASE_URL/sessions/start \
-  -H "Content-Type: application/json" \
-  -d '{"team_name": "Blue Team"}'
-
-# Le joueur 1 est encore dans l'équipe 1 -> 409
-curl -X POST $BASE_URL/sessions/2/players \
-  -H "Content-Type: application/json" \
-  -d '{"player_id": 1}'
-
-# Il quitte l'équipe 1 -> 200 (autorisé même après la fin de la partie)
-curl -X DELETE $BASE_URL/sessions/1/players/1
-
-# Puis rejoint l'équipe 2 -> 200
-curl -X POST $BASE_URL/sessions/2/players \
-  -H "Content-Type: application/json" \
-  -d '{"player_id": 1}'
-
-# Retirer un joueur qui n'est pas dans l'équipe -> 404
-curl -X DELETE $BASE_URL/sessions/1/players/1
-```
-
-## 7. Tout lancer d'un coup
-
-Le script [`tests/curl_requests.sh`](../tests/curl_requests.sh) enchaîne toutes
-ces requêtes dans le même ordre, compare chaque code HTTP à celui attendu et
-affiche le bilan (`✅` / `❌`). À lancer sur un serveur **tout juste démarré** :
-
-```bash
-./tests/curl_requests.sh
-# ou sur une autre adresse :
-BASE_URL=http://127.0.0.1:8001 ./tests/curl_requests.sh
-```
-
-## 8. Tests automatiques
-
-Les mêmes cas, plus le game over du timer, sont couverts par pytest :
-
-```bash
-python -m pytest -q
+# Tous les énoncés sont marqués "resolue": true
+curl $BASE_URL/sessions/1/rooms/1/enigma
 ```
