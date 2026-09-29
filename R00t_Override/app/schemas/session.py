@@ -35,6 +35,7 @@ class SessionState(BaseModel):
     status: StatutPartie
     started_at: datetime | None  # None tant que la partie est en lobby
     temps_restant: int | None  # secondes avant le game over, None en lobby
+    penalite_secondes: int  # temps perdu à cause des indices d'Eve
     players: list[PlayerRead]
     inventaire: dict[str, bool]
 
