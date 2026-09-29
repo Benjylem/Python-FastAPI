@@ -1,8 +1,11 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.core.logging_config import setup_logging
 from app.routers import players, rooms, sessions
 from app.services.exceptions import ServiceError
+
+setup_logging()
 
 app = FastAPI(title="RootOverride API Test")
 
