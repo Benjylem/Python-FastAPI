@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
-from app.data.salles import salles
+from app.services import room_service
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
@@ -11,16 +11,9 @@ router = APIRouter(prefix="/rooms", tags=["rooms"])
 
 @router.get("/")
 def get_rooms():
-    return list(salles.keys())
+    return room_service.list_salles()
 
 
 @router.get("/{salle_id}")
 def get_room(salle_id: int):
-    salle = salles.get(salle_id)
-    if salle is None:
-        raise HTTPException(status_code=404, detail="Salle introuvable")
-    return {
-        "id": salle.id,
-        "name": salle.name,
-        "bio": salle.bio,
-    }
+    return room_service.get_carte_salle(salle_id)

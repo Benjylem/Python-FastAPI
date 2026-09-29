@@ -366,3 +366,99 @@ def test_timer_frozen_after_victory(client, session_id):
     body = state(client, session_id)
     assert body["status"] == "victory"
     assert body["temps_restant"] == restant_a_la_victoire
+
+
+# --- Indices d'Eve ---
+
+
+def hint(client, session_id, salle_id):
+    return client.post(f"/sessions/{session_id}/rooms/{salle_id}/hint")
+
+
+def hints(client, session_id, salle_id):
+    return client.get(f"/sessions/{session_id}/rooms/{salle_id}/hints")
+
+
+def test_hint_reveals_first_clue_and_costs_two_minutes(client, session_id):
+    response = hint(client, session_id, 1)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["numero"] == 1
+    assert body["total"] == 3
+    assert body["eve"]
+    assert body["penalite_secondes"] == 120
+    assert 3475 <= body["temps_restant"] <= 3480
+    assert state(client, session_id)["penalite_secondes"] == 120
+
+
+def test_hints_are_progressive_then_exhausted(client, session_id):
+    textes = [hint(client, session_id, 1).json()["eve"] for _ in range(3)]
+
+    assert len(set(textes)) == 3
+    assert hint(client, session_id, 1).status_code == 409
+    assert state(client, session_id)["penalite_secondes"] == 3 * 120
+
+
+def test_hint_never_gives_the_answer(client):
+    from app.data.indices import indices
+
+    reponses = {1: "root_override", 2: "ADMIN_TOKEN_X987F", 4: "system.reboot(true)"}
+    for salle_id, reponse in reponses.items():
+        assert all(reponse not in texte for texte in indices[salle_id])
+
+
+def test_reread_hints_is_free(client, session_id):
+    premier = hint(client, session_id, 1).json()["eve"]
+
+    response = hints(client, session_id, 1)
+
+    assert response.status_code == 200
+    assert response.json() == {"room": 1, "indices": [premier], "restants": 2}
+    assert state(client, session_id)["penalite_secondes"] == 120
+
+
+def test_hint_in_lobby_returns_409(client, lobby_id):
+    assert hint(client, lobby_id, 1).status_code == 409
+
+
+def test_hint_for_locked_room_returns_403(client, session_id):
+    assert hint(client, session_id, 2).status_code == 403
+
+
+def test_hint_for_solved_room_returns_409(client, session_id):
+    submit(client, session_id, 1, BONNES_REPONSES[1])
+
+    assert hint(client, session_id, 1).status_code == 409
+
+
+def test_hint_unknown_room_or_session_returns_404(client, session_id):
+    assert hint(client, session_id, 99).status_code == 404
+    assert hint(client, 999, 1).status_code == 404
+
+
+def test_hints_are_per_room(client, session_id):
+    hint(client, session_id, 1)
+    submit(client, session_id, 1, BONNES_REPONSES[1])
+
+    assert hint(client, session_id, 2).json()["numero"] == 1
+    assert len(hints(client, session_id, 1).json()["indices"]) == 1
+
+
+def test_hint_penalty_can_cause_game_over(client, session_id):
+    avancer_le_temps(session_id, minutes=59)
+
+    response = hint(client, session_id, 1)
+
+    assert response.json()["game_status"] == "game_over"
+    assert response.json()["temps_restant"] == 0
+    assert submit(client, session_id, 1, BONNES_REPONSES[1]).status_code == 409
+
+
+def test_game_over_time_accounts_for_penalties(client, session_id):
+    hint(client, session_id, 1)
+    hint(client, session_id, 1)
+    avancer_le_temps(session_id, minutes=57)
+
+    assert state(client, session_id)["status"] == "game_over"
+

@@ -1,43 +1,33 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
-from app.data import players as players_data
 from app.schemas.player import PlayerCreate, PlayerRead, PlayerUpdate
+from app.services import player_service
 
 router = APIRouter(prefix="/players", tags=["players"])
 
 
-def _get_player(player_id: int):
-    player = players_data.players.get(player_id)
-    if player is None:
-        raise HTTPException(status_code=404, detail="Player not found")
-    return player
-
-
 @router.get("/", response_model=list[PlayerRead])
 def get_players():
-    return list(players_data.players.values())
+    return player_service.list_players()
 
 
 @router.get("/{player_id}", response_model=PlayerRead)
 def get_player(player_id: int):
-    return _get_player(player_id)
+    return player_service.get_player(player_id)
 
 
 @router.post("/", response_model=PlayerRead)
 def create_player(payload: PlayerCreate):
-    return players_data.create_player(payload.name)
+    player = player_service.create_player(payload.name)
+    return player
 
 
 @router.put("/{player_id}", response_model=PlayerRead)
 def update_player(player_id: int, payload: PlayerUpdate):
-    player = _get_player(player_id)
-    player.name = payload.name
+    player = player_service.rename_player(player_id, payload.name)
     return player
 
 
 @router.delete("/{player_id}", status_code=204)
 def delete_player(player_id: int):
-    # Le lien d'équipe est porté par le joueur : le supprimer le retire
-    # automatiquement de son équipe.
-    _get_player(player_id)
-    del players_data.players[player_id]
+    player_service.delete_player(player_id)
