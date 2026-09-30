@@ -3,12 +3,12 @@
 Les routers appellent ces fonctions ; la logique « pure » (chrono, inventaire,
 vérification d'une réponse) reste dans les classes du domaine.
 """
-
-from app.data import sessions as sessions_data
+from app.services.exceptions import Conflict, Forbidden, NotFound
 from app.data.indices import indices
+from app.data import sessions as sessions_data
 from app.domain.session import PENALITE_INDICE, Session, StatutPartie
 from app.services import player_service, room_service
-from app.services.exceptions import Conflict, Forbidden, NotFound
+
 
 
 # --- Accès et vérifications ---

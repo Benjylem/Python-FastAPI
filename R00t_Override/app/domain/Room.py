@@ -1,6 +1,6 @@
+from app.domain.Door import Door
 from app.domain.Enigme import Enigme
 from app.domain.GameElement import GameElement
-from app.domain.Door import Door
 
 
 class Salle(GameElement):

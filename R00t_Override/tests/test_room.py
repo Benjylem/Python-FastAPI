@@ -1,5 +1,5 @@
-from app.domain.Room import Salle
 from app.domain.Enigme import EnigmeChaine
+from app.domain.Room import Salle
 
 enigme = EnigmeChaine(1, "prompt", "reponse")
 
