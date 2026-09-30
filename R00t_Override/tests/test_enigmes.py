@@ -1,9 +1,10 @@
 """Règles de validation des énigmes, testées directement sur les objets domaine."""
-
+from app.domain.Enigme import HashPuzzle 
 from app.data.salles import salles
 
-SALLE3_OK = {"bypass_firewall": True, "override_lock": "ACTIVE", "port_status": 80}
 
+SALLE3_OK = {"bypass_firewall": True, "override_lock": "ACTIVE", "port_status": 80}
+HASH_PASSWORD = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
 
 def test_salle1_accepts_decoded_key_ignoring_case_and_spaces():
     assert salles[1].enigme.check_solution("root_override")
@@ -52,3 +53,19 @@ def test_salle4_ignores_case_and_spaces():
 
 def test_salle4_rejects_wrong_patch():
     assert not salles[4].enigme.check_solution("system.reboot(false)")
+
+def test_hashpuzzle_accepts_correct_password():
+    puzzle = HashPuzzle(1, "prompt", expected_hash=HASH_PASSWORD)
+    # TODO: assert que puzzle.check_solution("password") est True
+    assert puzzle.check_solution("password") 
+
+def test_hashpuzzle_rejects_wrong_password():
+    puzzle = HashPuzzle(1, "prompt", expected_hash=HASH_PASSWORD)
+    # TODO: assert que puzzle.check_solution("mot_de_passe_incorrect") est False
+    assert not puzzle.check_solution("mot_de_pass_incorect")
+
+def test_hashpuzzle_does_not_store_plaintext_password():
+    puzzle = HashPuzzle(1, "prompt", expected_hash=HASH_PASSWORD)
+    # TODO: assert que "password" (le mot en clair) n'apparaît nulle part
+    # dans les attributs de puzzle — vérifie via vars(puzzle) ou puzzle.__dict__
+    assert  "password" not in vars(puzzle).values()

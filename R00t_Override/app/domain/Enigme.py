@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import hashlib
 
 # Types acceptés dans le payload de la salle 3 (JSON : true/false, nombres, chaînes).
 ValeurCondition = bool | int | str
@@ -57,3 +58,12 @@ class EnigmePatch(EnigmeChaine):
     def _normaliser(self, texte: str) -> str:
         # "  System.Reboot( TRUE ) " -> "system.reboot(true)"
         return "".join(super()._normaliser(texte).split())
+
+
+class HashPuzzle(Enigme):
+    def __init__(self, id: int, prompt: str, expected_hash: str):
+        super().__init__(id, prompt)
+        self.expected_hash = expected_hash
+
+    def check_solution(self, answer: str) -> bool:
+        return hashlib.sha256(answer.encode()).hexdigest() == self.expected_hash
