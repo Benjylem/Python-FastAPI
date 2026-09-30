@@ -17,4 +17,4 @@ def list_salles() -> list[int]:
 def get_carte_salle(salle_id: int) -> dict:
     """Carte publique d'une salle : nom et bio, sans l'énoncé."""
     salle = get_salle(salle_id)
-    return {"id": salle.id, "name": salle.name, "bio": salle.bio}
+    return salle.to_dict()
