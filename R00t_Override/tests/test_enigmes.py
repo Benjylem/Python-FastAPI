@@ -56,16 +56,12 @@ def test_salle4_rejects_wrong_patch():
 
 def test_hashpuzzle_accepts_correct_password():
     puzzle = HashPuzzle(1, "prompt", expected_hash=HASH_PASSWORD)
-    # TODO: assert que puzzle.check_solution("password") est True
     assert puzzle.check_solution("password") 
 
 def test_hashpuzzle_rejects_wrong_password():
     puzzle = HashPuzzle(1, "prompt", expected_hash=HASH_PASSWORD)
-    # TODO: assert que puzzle.check_solution("mot_de_passe_incorrect") est False
     assert not puzzle.check_solution("mot_de_pass_incorect")
 
 def test_hashpuzzle_does_not_store_plaintext_password():
     puzzle = HashPuzzle(1, "prompt", expected_hash=HASH_PASSWORD)
-    # TODO: assert que "password" (le mot en clair) n'apparaît nulle part
-    # dans les attributs de puzzle — vérifie via vars(puzzle) ou puzzle.__dict__
     assert  "password" not in vars(puzzle).values()
