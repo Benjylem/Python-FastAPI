@@ -1,7 +1,7 @@
 """Comportement de Door.est_ouverte, testé directement sur les objets domaine."""
 
 from app.domain.Door import Door
-from app.domain.session import Inventaire
+from app.domain.Inventaire import Inventaire
 
 REWARD = "cle_validation_externe"
 

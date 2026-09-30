@@ -2,7 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.domain.session import Inventaire, StatutPartie
+from app.domain.Inventaire import Inventaire
+from app.domain.session import StatutPartie
 from app.schemas.player import PlayerRead
 
 

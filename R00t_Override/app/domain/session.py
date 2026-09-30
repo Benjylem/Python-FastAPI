@@ -4,6 +4,7 @@ from enum import StrEnum
 from app.data import players as players_data
 from app.data.indices import indices
 from app.data.salles import salles
+from app.domain.Inventaire import Inventaire
 from app.domain.players import Player
 from app.domain.Room import Salle
 
@@ -19,17 +20,7 @@ class StatutPartie(StrEnum):
     GAME_OVER = "game_over"  # timer écoulé
 
 
-class Inventaire:
-    """Inventaire partagé par toute l'équipe : un booléen par reward de salle."""
 
-    def __init__(self, rewards: list[str]):
-        self.items: dict[str, bool] = {reward: False for reward in rewards}
-
-    def ajouter(self, reward: str) -> None:
-        self.items[reward] = True
-
-    def possede(self, reward: str) -> bool:
-        return self.items.get(reward, False)
 
 
 class Session:
