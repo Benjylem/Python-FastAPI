@@ -22,4 +22,9 @@ async def service_error_handler(request: Request, exc: ServiceError):
 
 @app.get("/")
 def read_root():
-    return {"status": "ok", "message": "Environnement Conda prêt pour l'Escape Game R00T override Routes tested!"}
+    return {"status": "ok", "message": "Environnement Conda prêt pour l'Escape Game R00T override !"}
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "online", "game_title": "R00T override", "engine_version": "1.0.0"}
