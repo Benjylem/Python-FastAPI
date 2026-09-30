@@ -117,6 +117,12 @@ def submit(session_id: int, salle_id: int, answer) -> dict:
     _verifier_salle_active(session, salle_id)
 
     success = session.soumettre(salle, answer)
+    message_eve = None
+    if success:
+        if salle.doors:
+            message_eve = salle.doors[0].message_eve
+        elif salle.message_victoire is not None:
+            message_eve = salle.message_victoire
 
     return {
         "success": success,
@@ -125,6 +131,7 @@ def submit(session_id: int, salle_id: int, answer) -> dict:
         "current_room": session.current_room,
         "game_status": session.status,
         "temps_restant": session.temps_restant,
+        "message_eve": message_eve,
     }
 
 

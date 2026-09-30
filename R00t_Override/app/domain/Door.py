@@ -1,5 +1,6 @@
 from app.domain.GameElement import GameElement
 
+
 class Door(GameElement):
     def __init__(self, id: int, name: str, bio: str, is_locked: bool, required_item_id: str | None, message_eve: str):
         super().__init__(id, name, bio)

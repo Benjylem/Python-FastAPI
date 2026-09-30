@@ -462,3 +462,19 @@ def test_game_over_time_accounts_for_penalties(client, session_id):
 
     assert state(client, session_id)["status"] == "game_over"
 
+# --- Reponses d'Eve en cas de reussite---
+
+def test_correct_answer_reveals_eve_message(client, session_id):
+    response = submit(client, session_id, 1, BONNES_REPONSES[1])
+    assert response.json()["message_eve"] is not None
+
+
+def test_wrong_answer_has_no_eve_message(client, session_id):
+    response = submit(client, session_id, 1, {"answer": "mauvaise_reponse"})
+    assert response.json()["message_eve"] is None
+
+def test_victory_gives_a_victory_message(client, session_id):
+    for salle_id in (1, 2, 3, 4):
+        response = submit(client, session_id, salle_id, BONNES_REPONSES[salle_id])
+    assert response.json()["game_status"] == "victory"
+    assert response.json()["message_eve"] is not None
