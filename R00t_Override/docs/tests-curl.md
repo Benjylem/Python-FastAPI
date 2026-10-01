@@ -15,14 +15,15 @@ Depuis le dossier `R00t_Override/` :
 
 ```bash
 conda activate r00t_override
-uvicorn app.main:app --reload
+fastapi dev app/main.py
 ```
 
 L'API écoute sur `http://127.0.0.1:8000`. La doc interactive Swagger est aussi
 disponible sur <http://127.0.0.1:8000/docs>.
 
-> Avec `--reload`, chaque sauvegarde d'un fichier redémarre le serveur et efface
-> les sessions. Pour tester sans toucher au code, lance-le sans `--reload`.
+> Avec `fastapi dev`, chaque sauvegarde d'un fichier redémarre le serveur et efface
+> les sessions. Pour tester sans toucher au code, lance-le avec `fastapi run app/main.py`
+> (sans rechargement automatique).
 
 Dans un second terminal, définis l'URL de base et l'en-tête JSON :
 

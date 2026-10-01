@@ -110,7 +110,7 @@ pytest -v tests/
 Résultat attendu : tous les tests passent, sans serveur à lancer.
 
 ```text
-============================= 102 passed in 1.23s ==============================
+============================= 116 passed ==============================
 ```
 
 La suite couvre les salles, les joueurs, les énigmes, les services (sans HTTP), les logs des routers et le déroulé complet d'une session (lobby, équipe, progression, victoire, chrono, game over, indices). Le chrono est testé en reculant l'heure de départ, sans attendre 60 minutes.
@@ -123,6 +123,6 @@ Projet réalisé par Amaury Aune et Benjamin Lemoine.
 
 | Amaury | Benjamin |
 |--------|-----------|
-| Classes et storytelling | Routes, logique metier et logs |
+| Classes et storytelling | Routes, logique métier et logs |
 
 Pour le reste c'est un travail commun : Enigmes, réponses GM, tests.
