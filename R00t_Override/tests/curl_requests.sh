@@ -48,7 +48,7 @@ if ! curl -s -o /dev/null "$BASE_URL/"; then
 fi
 
 echo "=== Health check ==="
-check "GET / (health check)" 200 "$BASE_URL/"
+check "GET /health (health check)" 200 "$BASE_URL/health"
 
 echo
 echo "=== Rooms : carte publique (nom + bio, sans énoncé) ==="
