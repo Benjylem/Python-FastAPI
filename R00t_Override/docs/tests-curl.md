@@ -70,10 +70,13 @@ python -m pytest -v     # nom de chaque test
 ## 4. Health check
 
 ```bash
+# Health check simple -> 200, {"status": "ok", "message": "..."}
 curl $BASE_URL/
-```
 
-Attendu : `200`, `{"status": "ok", "message": "..."}`
+# État du service -> 200, {"status": "online", "game_title": "R00T override",
+# "engine_version": "1.0.0"}
+curl $BASE_URL/health
+```
 
 ## 5. Rooms : la carte publique
 
@@ -114,8 +117,11 @@ curl $BASE_URL/players/999
 # Créer -> 200, {"id": 3, "name": "Alice", "session_id": null}
 curl -X POST $BASE_URL/players/ -H "$JSON" -d '{"name": "Alice"}'
 
-# Nom trop court -> 422
+# Nom trop court (moins de 3 caractères) -> 422
 curl -X POST $BASE_URL/players/ -H "$JSON" -d '{"name": "Al"}'
+
+# Nom trop long (plus de 30 caractères) -> 422
+curl -X POST $BASE_URL/players/ -H "$JSON" -d '{"name": "Un_nom_beaucoup_trop_long_pour_le_jeu"}'
 
 # Modifier -> 200, Alice devient Alicia
 curl -X PUT $BASE_URL/players/3 -H "$JSON" -d '{"name": "Alicia"}'
@@ -148,6 +154,9 @@ curl -X POST $BASE_URL/sessions/start -H "$JSON" -d '{"team_name": "Hackers"}'
 # Nom d'équipe vide -> 422
 curl -X POST $BASE_URL/sessions/start -H "$JSON" -d '{"team_name": "   "}'
 
+# Nom d'équipe trop long (plus de 50 caractères) -> 422
+curl -X POST $BASE_URL/sessions/start -H "$JSON" -d '{"team_name": "Une_equipe_avec_un_nom_vraiment_beaucoup_trop_long_pour_etre_valide"}'
+
 # Lire l'état -> 200
 curl $BASE_URL/sessions/1/state
 
@@ -169,6 +178,9 @@ curl -X POST $BASE_URL/sessions/1/players -H "$JSON" -d '{"player_id": 1}'
 
 # Joueur inconnu -> 404
 curl -X POST $BASE_URL/sessions/1/players -H "$JSON" -d '{"player_id": 999}'
+
+# Id négatif ou nul -> 422 (player_id doit être > 0)
+curl -X POST $BASE_URL/sessions/1/players -H "$JSON" -d '{"player_id": 0}'
 ```
 
 ### Lancer la partie
@@ -232,7 +244,9 @@ On ne peut lire et répondre qu'à la salle active (`current_room`) :
 
 Chaque bonne réponse ajoute le reward de la salle à l'inventaire de l'équipe et
 ouvre la salle suivante. La réponse contient `success`, `message`, `reward`,
-`current_room`, `game_status` et `temps_restant`.
+`current_room`, `game_status`, `temps_restant` et `message_eve` : le message
+d'Eve quand la porte vers la salle suivante s'ouvre (ou le message de victoire
+en salle 4), `null` après une mauvaise réponse.
 
 ### Demander un indice à Eve
 
@@ -277,7 +291,8 @@ curl -X POST $BASE_URL/sessions/1/rooms/1/submit -H "$JSON" -d '{"answer": "   "
 # Renvoyer la chaîne encore encodée -> 200, "success": false
 curl -X POST $BASE_URL/sessions/1/rooms/1/submit -H "$JSON" -d '{"answer": "cm9vdF9vdmVycmlkZQ=="}'
 
-# Bonne réponse -> 200, "success": true, "reward": "cle_validation_externe", "current_room": 2
+# Bonne réponse -> 200, "success": true, "reward": "cle_validation_externe", "current_room": 2,
+# "message_eve" : Eve annonce la salle suivante
 curl -X POST $BASE_URL/sessions/1/rooms/1/submit -H "$JSON" -d '{"answer": "root_override"}'
 
 # Rejouer la salle 1 -> 409 "Salle déjà résolue"
@@ -337,7 +352,8 @@ curl $BASE_URL/sessions/1/rooms/4/enigma
 # Mauvais patch -> 200, "success": false
 curl -X POST $BASE_URL/sessions/1/rooms/4/submit -H "$JSON" -d '{"answer": "system.reboot(false)"}'
 
-# Patch final -> 200, "success": true, "game_status": "victory"
+# Patch final -> 200, "success": true, "game_status": "victory",
+# "message_eve" : message de victoire d'Eve
 curl -X POST $BASE_URL/sessions/1/rooms/4/submit -H "$JSON" -d '{"answer": "  System.Reboot( TRUE ) "}'
 
 # Soumettre après la victoire -> 409

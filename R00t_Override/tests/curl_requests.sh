@@ -49,6 +49,7 @@ fi
 
 echo "=== Health check ==="
 check "GET / (health check)" 200 "$BASE_URL/"
+check "GET /health (état du service)" 200 "$BASE_URL/health"
 
 echo
 echo "=== Rooms : carte publique (nom + bio, sans énoncé) ==="
@@ -66,6 +67,7 @@ BOB=$(champ '["id"]')
 check "Lire Alice" 200 "$BASE_URL/players/$ALICE"
 check "Joueur inconnu" 404 "$BASE_URL/players/999999"
 check "Nom trop court" 422 -X POST "$BASE_URL/players/" -H "$JSON" -d '{"name": "Al"}'
+check "Nom trop long (> 30)" 422 -X POST "$BASE_URL/players/" -H "$JSON" -d '{"name": "Un_nom_beaucoup_trop_long_pour_le_jeu"}'
 check "Renommer Bob en Bobby" 200 -X PUT "$BASE_URL/players/$BOB" -H "$JSON" -d '{"name": "Bobby"}'
 check "Renommer un joueur inconnu" 404 -X PUT "$BASE_URL/players/999999" -H "$JSON" -d '{"name": "Ghost"}'
 
@@ -74,6 +76,7 @@ echo "=== Session : création de l'équipe (lobby) ==="
 check "Créer l'équipe Hackers" 200 -X POST "$BASE_URL/sessions/start" -H "$JSON" -d '{"team_name": "Hackers"}'
 S=$(champ '["id"]')
 check "Nom d'équipe vide" 422 -X POST "$BASE_URL/sessions/start" -H "$JSON" -d '{"team_name": "   "}'
+check "Nom d'équipe trop long (> 50)" 422 -X POST "$BASE_URL/sessions/start" -H "$JSON" -d '{"team_name": "Une_equipe_avec_un_nom_vraiment_beaucoup_trop_long_pour_etre_valide"}'
 check "Session inconnue" 404 "$BASE_URL/sessions/999999/state"
 check "Lancer sans joueur" 409 -X POST "$BASE_URL/sessions/$S/launch"
 check "Énoncé avant lancement" 409 "$BASE_URL/sessions/$S/rooms/1/enigma"
@@ -84,6 +87,7 @@ echo "=== Session : composition de l'équipe ==="
 check "Alice rejoint" 200 -X POST "$BASE_URL/sessions/$S/players" -H "$JSON" -d "{\"player_id\": $ALICE}"
 check "Alice rejoint deux fois" 409 -X POST "$BASE_URL/sessions/$S/players" -H "$JSON" -d "{\"player_id\": $ALICE}"
 check "Joueur inconnu rejoint" 404 -X POST "$BASE_URL/sessions/$S/players" -H "$JSON" -d '{"player_id": 999999}'
+check "player_id nul (doit être > 0)" 422 -X POST "$BASE_URL/sessions/$S/players" -H "$JSON" -d '{"player_id": 0}'
 check "Lancer la partie" 200 -X POST "$BASE_URL/sessions/$S/launch"
 check "Lancer une deuxième fois" 409 -X POST "$BASE_URL/sessions/$S/launch"
 check "État : chrono démarré" 200 "$BASE_URL/sessions/$S/state"
