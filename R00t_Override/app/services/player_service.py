@@ -1,11 +1,16 @@
+import logging
+
 from app.data import players as players_data
 from app.domain.players import Player
 from app.services.exceptions import NotFound
+
+logger = logging.getLogger(__name__)
 
 
 def get_player(player_id: int) -> Player:
     player = players_data.players.get(player_id)
     if player is None:
+        logger.warning("Joueur %s introuvable", player_id)
         raise NotFound("Player not found")
     return player
 

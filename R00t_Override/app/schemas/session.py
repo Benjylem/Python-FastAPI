@@ -10,8 +10,9 @@ from app.schemas.player import PlayerRead
 class SessionCreate(BaseModel):
     """Payload pour créer une équipe : la session démarre en lobby."""
 
-    team_name: str = Field(..., description="Nom de l'équipe")
+    team_name: str = Field(..., min_length=1, max_length=50, description="Nom de l'équipe")
 
+    # min_length ne refuse pas "   " (3 caractères) : on vérifie aussi le contenu.
     @field_validator("team_name")
     def team_name_must_not_be_empty(cls, v: str) -> str:
         if not v.strip():
@@ -22,7 +23,7 @@ class SessionCreate(BaseModel):
 class JoinTeam(BaseModel):
     """Payload pour qu'un joueur existant rejoigne une équipe."""
 
-    player_id: int
+    player_id: int = Field(..., gt=0, description="Id d'un joueur existant")
 
 
 class SessionState(BaseModel):
