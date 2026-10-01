@@ -4,13 +4,13 @@ from pydantic import BaseModel, ConfigDict, Field
 class PlayerCreate(BaseModel):
     """Payload pour créer un joueur (sans équipe : il en rejoint une ensuite)."""
 
-    name: str = Field(min_length=3)
+    name: str = Field(..., min_length=3, max_length=30, description="Nom du joueur")
 
 
 class PlayerUpdate(BaseModel):
     """Payload pour modifier un joueur (PUT) : l'équipe se gère via /sessions."""
 
-    name: str = Field(min_length=3)
+    name: str = Field(..., min_length=3, max_length=30, description="Nom du joueur")
 
 
 class PlayerRead(BaseModel):
