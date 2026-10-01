@@ -119,10 +119,10 @@ Pour rejouer une partie complète contre un serveur lancé, lancez `./tests/curl
 
 ## Équipe
 
-Projet realisé par Amaury Aune et Benjamin Lemoine.
+Projet réalisé par Amaury Aune et Benjamin Lemoine.
 
-| Amaury | Benjamain |
+| Amaury | Benjamin |
 |--------|-----------|
-| Classes et story telling | Routes, logic metier et logs |
+| Classes et storytelling | Routes, logique metier et logs |
 
-Pour le reste c'est un travail commun : Enigmes, reponses GM, tests.
+Pour le reste c'est un travail commun : Enigmes, réponses GM, tests.
