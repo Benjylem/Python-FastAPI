@@ -3,12 +3,15 @@
 Les routers appellent ces fonctions ; la logique « pure » (chrono, inventaire,
 vérification d'une réponse) reste dans les classes du domaine.
 """
+import logging
+
 from app.services.exceptions import Conflict, Forbidden, NotFound
 from app.data.indices import indices
 from app.data import sessions as sessions_data
 from app.domain.session import PENALITE_INDICE, Session, StatutPartie
 from app.services import player_service, room_service
 
+logger = logging.getLogger(__name__)
 
 
 # --- Accès et vérifications ---
@@ -17,6 +20,7 @@ from app.services import player_service, room_service
 def get_session(session_id: int) -> Session:
     session = sessions_data.sessions.get(session_id)
     if session is None:
+        logger.warning("Session %s introuvable", session_id)
         raise NotFound("Session introuvable")
     session.verifier_timer()
     return session
@@ -71,6 +75,7 @@ def leave_team(session_id: int, player_id: int) -> Session:
     session = get_session(session_id)
     player = player_service.get_player(player_id)
     if player.session_id != session_id:
+        logger.warning("Joueur %s absent de la session %s", player_id, session_id)
         raise NotFound("Le joueur ne fait pas partie de cette équipe")
 
     session.retirer_joueur(player)

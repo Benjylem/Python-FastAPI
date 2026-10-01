@@ -1,11 +1,16 @@
+import logging
+
 from app.data.salles import salles
 from app.domain.Room import Salle
 from app.services.exceptions import NotFound
+
+logger = logging.getLogger(__name__)
 
 
 def get_salle(salle_id: int) -> Salle:
     salle = salles.get(salle_id)
     if salle is None:
+        logger.warning("Salle %s introuvable", salle_id)
         raise NotFound("Salle introuvable")
     return salle
 

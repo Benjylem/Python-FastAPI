@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -6,6 +8,7 @@ from app.routers import players, rooms, sessions
 from app.services.exceptions import ServiceError
 
 setup_logging()
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="RootOverride API Test")
 
@@ -18,6 +21,14 @@ app.include_router(sessions.router)
 async def service_error_handler(request: Request, exc: ServiceError):
     """Traduit les erreurs métier des services en réponse HTTP (404, 403, 409)."""
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(Exception)
+async def unexpected_error_handler(request: Request, exc: Exception):
+    """Filet de sécurité : toute exception imprévue est journalisée avec sa trace
+    complète, et le client reçoit une 500 sans détail interne."""
+    logger.exception("Erreur inattendue sur %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Erreur interne"})
 
 
 @app.get("/")
